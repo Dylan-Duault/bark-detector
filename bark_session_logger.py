@@ -15,6 +15,7 @@ import time
 from collections import deque
 import csv
 from audio_recording import AudioBuffer, BarkRecorder
+from storage import LOGS_DIR, RECORDINGS_DIR, prepare_data_directory
 
 # Constants
 SAMPLE_RATE = 16000
@@ -33,7 +34,8 @@ CONSECUTIVE_BARKS = 2  # Consecutive positive 1.2-second chunks
 
 def get_log_file_path():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
-    return os.path.join(os.path.dirname(__file__), f"bark_log_{today}.txt")
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    return LOGS_DIR / f"bark_log_{today}.txt"
 
 
 def load_yamnet():
@@ -83,8 +85,9 @@ def log_session(start, end, count):
 def main():
     yamnet_model = load_yamnet()
     class_map = load_class_map()
+    prepare_data_directory()
     audio_buffer = AudioBuffer(SAMPLE_RATE, CHUNK_SAMPLES, RECORD_DURATION)
-    recorder = BarkRecorder(audio_buffer, os.path.join(os.path.dirname(__file__), "recordings"),
+    recorder = BarkRecorder(audio_buffer, RECORDINGS_DIR,
                             SAMPLE_RATE, CONSECUTIVE_BARKS, RECORD_QUIET_SECONDS)
 
     log_header()

@@ -3,13 +3,14 @@ const button=document.getElementById('login-button');
 const message=document.getElementById('login-message');
 const pin=document.getElementById('pin');
 let timer;
-function wait(seconds) {
+if (new URLSearchParams(window.location.search).has('expired')) message.textContent='Votre session a expiré. Saisissez votre code pour vous reconnecter.';
+function wait(seconds, reason) {
   const deadline=Date.now()+seconds*1000;
   clearInterval(timer);
   function tick() {
     const left=Math.max(0,Math.ceil((deadline-Date.now())/1000));
     button.disabled=left>0;
-    message.textContent=left?`Nouvelle tentative dans ${left} s.`:'Vous pouvez réessayer.';
+    message.textContent=left?`${reason} Réessayez dans ${left} s.`:'Vous pouvez saisir votre code à nouveau.';
     if (!left) { clearInterval(timer); pin.focus(); }
   }
   tick(); timer=setInterval(tick,250);
@@ -23,8 +24,8 @@ form.addEventListener('submit',async event=>{
     const data=await response.json();
     if (response.ok) { window.location.replace('/'); return; }
     pin.value='';
-    if (data.retry_after) { wait(data.retry_after); return; }
-    message.textContent=data.error || 'Connexion impossible.';
-  } catch(error) { message.textContent='Serveur indisponible. Réessayez dans un instant.'; }
+    if (data.retry_after) { wait(data.retry_after, response.status === 401 ? 'Code incorrect.' : 'Veuillez patienter.'); return; }
+    message.textContent=data.error || 'Impossible de vérifier le code. Réessayez.';
+  } catch(error) { message.textContent='Connexion au Pi impossible. Vérifiez votre réseau, puis réessayez.'; }
   button.disabled=false;
 });

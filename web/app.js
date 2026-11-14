@@ -4,7 +4,16 @@ $('date').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(
 let request = 0;
 let period = 7;
 const formatDate = value => new Date(`${value}T12:00:00`).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'});
-const duration = seconds => seconds < 60 ? `${Math.round(seconds)} s` : `${Math.floor(seconds/60)} min ${Math.round(seconds%60)} s`;
+const duration = seconds => {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total % 3600 / 60);
+  const rest = total % 60;
+  if (hours) return `${hours} h ${minutes} min`;
+  return minutes ? `${minutes} min${rest ? ` ${rest} s` : ''}` : `${rest} s`;
+};
+const extracts = count => `${count} extrait${count === 1 ? '' : 's'} avec aboiements`;
+const files = count => `${count} fichier${count === 1 ? '' : 's'} audio`;
 function element(tag, text, className) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
@@ -14,7 +23,7 @@ function element(tag, text, className) {
 
 function renderTrends(trends) {
   const logged = trends.days.filter(day=>day.has_log).length;
-  $('period-caption').textContent = `Du ${formatDate(trends.start)} au ${formatDate(trends.end)} · ${logged} jours avec un journal sur ${trends.period}. Un journal présent ne garantit pas une journée complète d’écoute.`;
+  $('period-caption').textContent = `Du ${formatDate(trends.start)} au ${formatDate(trends.end)} · ${logged} jour${logged === 1 ? '' : 's'} avec des données sur ${trends.period}. Chaque journée peut n’avoir été enregistrée qu’en partie.`;
   const maxSeconds = Math.max(1,...trends.days.map(day=>day.seconds));
   $('daily-scale').textContent = `Échelle : 0 → ${duration(maxSeconds)}`;
   $('daily-chart').style.setProperty('--days',trends.period);
@@ -23,7 +32,7 @@ function renderTrends(trends) {
     const button = element('button',undefined,`daily-bar${day.has_log?'':' no-data'}`);
     button.type='button';
     button.style.setProperty('--height',`${Math.max(2,day.seconds/maxSeconds*100)}%`);
-    const detail = `${formatDate(day.date)} : ${day.has_log?`${duration(day.seconds)} en sessions terminées · ${day.detections} détections`:'aucun journal disponible'}`;
+    const detail = `${formatDate(day.date)} : ${day.has_log?`${duration(day.seconds)} de séries d’aboiements, pauses comprises · ${extracts(day.detections)}`:'aucune donnée pour ce jour'}`;
     button.setAttribute('aria-label',detail); button.title=detail;
     button.addEventListener('click',()=>{ $('daily-detail').textContent=detail; });
     const track = element('div',undefined,'daily-track'); track.append(button);
@@ -31,7 +40,7 @@ function renderTrends(trends) {
     return column;
   }));
   const maxCount = Math.max(0,...trends.days.flatMap(day=>day.hours));
-  $('heat-max').textContent = `${maxCount} détections / h`;
+  $('heat-max').textContent = `${maxCount} extraits / h`;
   const cells = [element('span','Jour','heat-label')];
   for (let hour=0;hour<24;hour++) cells.push(element('span',String(hour).padStart(2,'0'),'heat-hour'));
   for (const day of trends.days) {
@@ -39,7 +48,7 @@ function renderTrends(trends) {
     day.hours.forEach((count,hour)=>{
       const level = count ? Math.max(1,Math.ceil(count/Math.max(1,maxCount)*4)) : 0;
       const cell = element('button',undefined,day.has_log?`heat-cell level-${level}`:'heat-cell no-data');
-      const detail = `${formatDate(day.date)}, ${hour} h–${hour+1} h : ${day.has_log?`${count} détections`:'aucun journal disponible'}`;
+      const detail = `${formatDate(day.date)}, ${hour} h–${hour+1} h : ${day.has_log?extracts(count):'aucune donnée pour ce jour'}`;
       cell.type='button'; cell.title=detail; cell.setAttribute('aria-label',detail);
       cell.addEventListener('click',()=>{ $('heat-detail').textContent=detail; });
       cells.push(cell);
@@ -49,7 +58,7 @@ function renderTrends(trends) {
   const maxHours=Math.max(1,...trends.hours);
   $('period-hours').replaceChildren(...trends.hours.map((count,hour)=>{
     const button=element('button',undefined,'bar hour-bar');
-    const detail=`${hour} h–${hour+1} h : ${count} détections sur ${trends.period} jours`;
+    const detail=`${hour} h–${hour+1} h : ${extracts(count)} sur ${trends.period} jours`;
     button.type='button'; button.style.setProperty('--height',`${count/maxHours*100}%`);
     button.setAttribute('aria-label',detail); button.title=detail;
     button.addEventListener('click',()=>{ $('hours-detail').textContent=detail; });
@@ -63,31 +72,32 @@ async function refresh() {
   const current = ++request;
   const date = $('date').value;
   if (!date) return;
-  $('status').textContent = 'Actualisation du journal…';
+  $('status').textContent = 'Actualisation des données…';
   try {
     const response = await fetch(`/api/dashboard?date=${encodeURIComponent(date)}&period=${period}`,{cache:'no-store'});
-    if (response.status === 401) { window.location.replace('/login'); return; }
+    if (response.status === 401) { window.location.replace('/login?expired=1'); return; }
     if (!response.ok) throw new Error('HTTP '+response.status);
     const data = await response.json();
     if (current !== request) return;
     renderTrends(data.trends);
     const s = data.summary;
-    $('detections').textContent = s.detections;
-    $('sessions').textContent = s.sessions;
-    $('duration').textContent = duration(s.seconds);
+    const hasStats = data.trends.days.at(-1).has_log;
+    $('detections').textContent = hasStats ? s.detections : '—';
+    $('sessions').textContent = hasStats ? s.sessions : '—';
+    $('duration').textContent = hasStats ? duration(s.seconds) : '—';
     $('count').textContent = s.recordings;
-    $('audio-count').textContent = `${s.recordings} fichier${s.recordings===1?'':'s'}`;
+    $('audio-count').textContent = files(s.recordings);
     const max = Math.max(1,...s.hours);
     $('chart').replaceChildren(...s.hours.map((count,hour) => {
       const bar = element('div',undefined,'bar');
       bar.style.setProperty('--height',`${count/max*100}%`);
       bar.tabIndex = 0;
-      bar.setAttribute('aria-label',`${hour} h : ${count} détections`);
-      bar.append(element('span',`${hour} h · ${count}`));
+      bar.setAttribute('aria-label',`${hour} h : ${extracts(count)}`);
+      bar.append(element('span',`${hour} h · ${count} extrait${count === 1 ? '' : 's'}`));
       return bar;
     }));
-    $('chart').setAttribute('aria-label',`Détections par heure : ${s.hours.map((n,h)=>`${h} h : ${n}`).join(', ')}`);
-    $('activity-note').textContent = s.detections ? `${s.detections} détections au fil de la journée.` : 'Aucune détection pour cette journée.';
+    $('chart').setAttribute('aria-label',`Extraits avec aboiements par heure : ${s.hours.map((n,h)=>`${h} h : ${n}`).join(', ')}`);
+    $('activity-note').textContent = !hasStats ? 'Aucune donnée d’écoute pour cette journée.' : s.detections ? `${extracts(s.detections)} pour la journée choisie.` : 'Aucun extrait avec aboiements pour la journée choisie.';
     const signature = JSON.stringify([date,data.recordings]);
     // Keep existing players intact during automatic refresh, including current playback.
     if (signature !== audioSignature) {
@@ -102,30 +112,30 @@ async function refresh() {
         const row = element('article',undefined,'recording');
         row.dataset.name = recording.name;
         const label = element('div');
-        label.append(element('strong',recording.time),element('small',`${duration(recording.duration)} d’audio`));
+        label.append(element('strong',`À ${recording.time}`),element('small',`Durée : ${duration(recording.duration)}`));
         const audio = document.createElement('audio');
         audio.controls = true; audio.preload = 'none'; audio.src = recording.url;
-        audio.setAttribute('aria-label',`Enregistrement de ${recording.time}`);
+        audio.setAttribute('aria-label',`Écouter l’enregistrement déclenché à ${recording.time}`);
         audio.addEventListener('play',()=>document.querySelectorAll('audio').forEach(other=>{if(other!==audio) other.pause();}));
         const download = element('a','Télécharger ↓','download');
         download.href = recording.url; download.download = recording.name;
         row.append(label,audio,download); container.prepend(row);
       }
-      if (!data.recordings.length) container.append(element('p','Aucun enregistrement ce jour-là. Les prochains apparaîtront ici automatiquement.','empty'));
+      if (!data.recordings.length) container.append(element('p','Aucun fichier audio pour cette journée. Si un enregistrement est en cours, il apparaîtra après sa fin.','empty'));
       audioSignature = signature;
       renderedDate = date;
     }
     $('history').replaceChildren(...data.days.map(day=>{
       const button = element('button',undefined,'day');
       button.type='button'; button.setAttribute('aria-pressed',String(day.date===date));
-      button.append(element('span',formatDate(day.date)),element('small',`${day.detections} détections · ${day.recordings} audio`));
+      button.append(element('span',formatDate(day.date)),element('small',`${extracts(day.detections)} · ${files(day.recordings)}`));
       button.addEventListener('click',()=>{ $('date').value=day.date; refresh(); });
       return button;
     }));
-    if (!data.days.length) $('history').append(element('p','Votre historique apparaîtra après les premières détections.','muted'));
+    if (!data.days.length) $('history').append(element('p','Aucune journée enregistrée pour le moment. Les journées apparaîtront lorsque le détecteur aura créé des données.','muted'));
     $('status').textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
   } catch (error) {
-    if (current === request) $('status').textContent = 'Journal indisponible. Vérifiez la connexion au serveur, puis actualisez.';
+    if (current === request) $('status').textContent = 'Impossible de charger les données. Vérifiez votre connexion au réseau du Pi, puis appuyez sur Actualiser.';
   }
 }
 document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{
@@ -138,4 +148,12 @@ $('refresh').addEventListener('click',refresh);
 refresh();
 setInterval(refresh,30000);
 
-$('logout').addEventListener('click',async()=>{const response=await fetch('/api/logout',{method:'POST'});if(response.ok) window.location.replace('/login');});
+$('logout').addEventListener('click',async()=>{
+  try {
+    const response=await fetch('/api/logout',{method:'POST'});
+    if (!response.ok) throw new Error('Logout failed');
+    window.location.replace('/login');
+  } catch (error) {
+    $('status').textContent='Déconnexion impossible. Vérifiez votre connexion au réseau du Pi, puis réessayez.';
+  }
+});

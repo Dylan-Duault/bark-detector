@@ -119,14 +119,17 @@ La machine doit rester allumée et le microphone branché.
 
 ## Lire les statistiques
 
-Choisir une date pour retrouver ses détections, sessions terminées et fichiers
-audio. La page s’actualise toutes les 30 secondes sans interrompre une écoute.
+Choisir une date pour retrouver les **extraits avec aboiements**, les
+**séries d’aboiements** et les fichiers audio. Un extrait est une portion de
+1,2 seconde reconnue comme contenant un chien ; une série regroupe les
+aboiements jusqu’à 1 min 30 de calme. L’aide « Comment lire ces chiffres ? »
+explique ces compteurs directement dans l’interface. La page s’actualise toutes les 30 secondes sans interrompre une écoute.
 
 Les graphiques sont **en bas de page** :
 
 | Graphique | À quoi il sert |
 | --- | --- |
-| Évolution quotidienne | Comparer le temps passé en sessions terminées d’un jour à l’autre |
+| Évolution quotidienne | Comparer le durée des séries d’aboiements déjà finies d’un jour à l’autre |
 | Calendrier de chaleur | Repérer les heures et les jours où les détections se répètent |
 | Activité horaire cumulée | Identifier les heures les plus animées sur la période |
 
@@ -134,7 +137,7 @@ Le sélecteur **7 / 30 jours** couvre la période se terminant à la date choisi
 Toucher une barre ou une case affiche le détail. Sur mobile, faire glisser le
 calendrier horizontalement pour parcourir les heures.
 
-Une **session statistique** se termine après 90 secondes sans détection. Sa
+Une **série d’aboiements** est comptée après 90 secondes sans détection. Sa
 durée inclut les pauses entre aboiements : ce n’est ni le temps de vocalisation
 exact ni la durée du fichier audio. La journée en cours peut être incomplète.
 Les jours sans journal sont hachurés ; un journal présent ne garantit pas une
@@ -197,7 +200,7 @@ Le serveur peut consulter l’historique même si le détecteur est arrêté.
 | --- | --- |
 | `--port 8080` | Changer le port web |
 | `--host 127.0.0.1` | Limiter l’accès à la machine locale |
-| `--data-dir /chemin/vers/les/donnees` | Lire un autre dossier de journaux et d’audio |
+| `--data-dir /chemin/vers/les/donnees` | Lire un autre dossier contenant `logs/` et `recordings/` |
 
 L’installateur accepte `--user NOM` pour un autre compte. Pour générer les
 unités sans les installer :
@@ -240,19 +243,30 @@ Aucun seuil minimal de confiance YAMNet n’est imposé en plus du classement.
 | `audio_recording.py` | Tampon audio et écriture des enregistrements |
 | `web_server.py` | Serveur HTTP, statistiques et lecture audio |
 | `dashboard_auth.py` | Code d’accès, sessions et délais |
+| `storage.py` | Emplacement commun des journaux et enregistrements |
 | `web/` | Interface mobile, connexion et graphiques |
 | `install_services.py`, `systemd/` | Installation et démarrage automatique |
 | `yamnet_class_map.csv` | Les 521 catégories du modèle |
 | `tests/` | Vérifications audio, statistiques, authentification et installation |
 | `docs/images/` | Captures d’écran de l’interface |
 
-Les données restent locales et sont exclues de Git :
+L’historique est regroupé dans `data/`, créé automatiquement au démarrage et
+entièrement exclu de Git :
+
+```text
+data/
+├── logs/         # Historique des extraits et séries, un journal par jour
+└── recordings/   # Fichiers audio WAV
+```
+
+Sauvegarder ce dossier pour conserver l’historique en cas de panne de la carte.
+Le code d’accès reste dans `.env`, séparé de l’historique et lui aussi exclu de Git :
 
 - `.env` : code d’accès ;
-- `bark_log_YYYY-MM-DD.txt` : détections et sessions ;
-- `recordings/bark_audio_YYYY-MM-DD_HH-MM-SS.wav` : audio terminé, nommé à l’heure
+- `data/logs/bark_log_YYYY-MM-DD.txt` : extraits reconnus et séries ;
+- `data/recordings/bark_audio_YYYY-MM-DD_HH-MM-SS.wav` : audio terminé, nommé à l’heure
   du déclenchement ;
-- `recordings/*.wav.part` : enregistrement temporaire, absent de l’interface.
+- `data/recordings/*.wav.part` : enregistrement temporaire, absent de l’interface.
 
 ## Vérifications
 

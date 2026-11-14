@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 import wave
 from dashboard_auth import Auth, COOKIE, SESSION_SECONDS, load_pin
+from storage import DATA_DIR, prepare_data_directory
 
 ROOT = Path(__file__).resolve().parent
 BARK = re.compile(r'^\[BARKING DETECTED\] (\d{4}-\d{2}-\d{2}) (\d{2}):\d{2}:\d{2}')
@@ -20,7 +21,7 @@ def dashboard_data(directory, selected=None, period=7):
         raise ValueError("Period must be 7 or 30 days")
     logged_dates = set()
     days = {}
-    for path in sorted(directory.glob('bark_log_????-??-??.txt')):
+    for path in sorted((directory / 'logs').glob('bark_log_????-??-??.txt')):
         date = path.stem.removeprefix('bark_log_')
         try:
             dt.date.fromisoformat(date)
@@ -229,8 +230,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='0.0.0.0', help='Listening address (default: all LAN interfaces)')
     parser.add_argument('--port', type=int, default=8080)
-    parser.add_argument('--data-dir', type=Path, default=ROOT)
+    parser.add_argument('--data-dir', type=Path, default=DATA_DIR,
+                        help='Data folder containing logs/ and recordings/ (default: project data/)')
     args = parser.parse_args()
+    if args.data_dir == DATA_DIR:
+        prepare_data_directory()
     if not args.data_dir.is_dir():
         parser.error('--data-dir must be an existing directory')
     try:

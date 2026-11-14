@@ -16,8 +16,9 @@ class DashboardTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.directory = Path(self.tmp.name)
         (self.directory / 'recordings').mkdir()
+        (self.directory / 'logs').mkdir()
         self.date = '2026-11-14'
-        (self.directory / f'bark_log_{self.date}.txt').write_text(
+        (self.directory / 'logs' / f'bark_log_{self.date}.txt').write_text(
             '[BARKING DETECTED] 2026-11-14 08:12:00 detected (volume: 0.1000)\n'
             '[BARKING DETECTED] 2026-11-14 08:12:02 detected (volume: 0.1000)\n'
             '[BARKING DETECTED] 2026-11-14 16:12:02 detected (volume: 0.1000)\n'
@@ -45,10 +46,10 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(dashboard_data(self.directory, '2026-11-13')['recordings'], [])
 
     def test_trends_fill_calendar_and_aggregate_hours(self):
-        (self.directory / 'bark_log_2026-11-13.txt').write_text(
+        (self.directory / 'logs' / 'bark_log_2026-11-13.txt').write_text(
             '[BARKING DETECTED] 2026-11-13 08:10:00 detected (volume: 0.1000)\n'
             '[BARK SESSION] From 2026-11-13 08:10:00 to 2026-11-13 08:12:30 (Duration: 60.0 seconds, 2 barks)\n')
-        (self.directory / 'bark_log_2026-11-01.txt').write_text(
+        (self.directory / 'logs' / 'bark_log_2026-11-01.txt').write_text(
             '[BARKING DETECTED] 2026-11-01 08:10:00 detected (volume: 0.1000)\n')
         trends = dashboard_data(self.directory, self.date, 7)['trends']
         self.assertEqual(len(trends['days']), 7)

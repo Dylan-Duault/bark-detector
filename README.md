@@ -1,292 +1,271 @@
 # Bark Detector
 
-A Python tool for real-time dog bark detection and logging using the [YAMNet](https://tfhub.dev/google/yamnet/1) audio classification model. Listens continuously to a microphone, detects and logs bark events, saves audio recordings of bark sessions, and includes scripts for visualising the data.
+**Le journal des aboiements de votre chien, à consulter depuis votre téléphone.**
 
-## How it works
+Un Raspberry Pi écoute le microphone, repère les vocalisations du chien et
+conserve les séries d’aboiements. L’interface **À l’écoute** permet ensuite de
+réécouter ces moments et de suivre leur évolution au fil des jours.
 
-- Captures audio from a microphone in 1.2-second chunks at 16kHz
-- Classifies each chunk using YAMNet (a TensorFlow audio model)
-- Detects bark events by volume threshold and class confidence
-- Groups individual barks into sessions separated by quiet gaps
-- Logs bark events and sessions to a daily text file
-- Records after two consecutive positive chunks, including 60 seconds of history, until 10 seconds without detection
+**Raspberry Pi · Interface mobile · Données locales · Accès par code**
 
-## Scripts
+## L’interface en images
 
-| Script | Description |
-|---|---|
-| `bark_session_logger.py` | Main script — runs real-time detection and logging |
-| `diary_writer.py` | Parses log files and writes a human-readable daily summary |
-| `diary_plots.py` | Generates heatmap and bar charts from log files |
-| `plot_bark_graph.py` | Plots bark frequency over time from log files |
-| `batch_waveforms.py` | Generates waveform PNG images from WAV recordings |
+| Le journal de la journée | L’évolution dans le temps |
+| :---: | :---: |
+| <img src="docs/images/dashboard-mobile.png" width="320" alt="Interface mobile : statistiques quotidiennes, activité par heure"> | <img src="docs/images/trends-mobile.png" width="320" alt="Interface mobile : évolution quotidienne, calendrier de chaleur et activité cumulée par heure"> |
 
-## Requirements
+*Captures de l’interface réelle avec des données de démonstration. Les chiffres
+et enregistrements illustrés ne proviennent pas du chien de l’utilisateur.*
 
-- Python 3.10–3.12 (TensorFlow does not yet support Python 3.13+)
-- A working microphone
-- Git
-- ffmpeg (see below)
-- Microsoft Visual C++ Redistributable (see below)
+<details>
+<summary>Voir les lecteurs audio et l’écran de connexion</summary>
 
-## Installing Microsoft Visual C++ Redistributable (Windows)
+<p>Écoute et téléchargement des enregistrements, puis accès par code :</p>
+<p>
+<img src="docs/images/recordings-mobile.png" width="320" alt="Liste des enregistrements avec lecteurs audio et liens de téléchargement">
+<img src="docs/images/login-mobile.png" width="320" alt="Écran de connexion demandant un code à quatre chiffres">
+</p>
 
-TensorFlow requires this to be installed on Windows. If you see a DLL load error when running the script, this is the cause.
+</details>
 
-1. Search Google for **"Microsoft Visual C++ Redistributable latest"** and go to the Microsoft download page
-2. Download and install the **x64** version
-3. Restart your computer and try again
+## Ce que fait le projet
 
-## Installing ffmpeg (Windows)
+- **Conserver toute la série** : l’enregistrement inclut jusqu’à une minute avant
+  le déclenchement, puis continue jusqu’à 10 secondes sans détection.
+- **Réécouter depuis le téléphone** : lecteurs audio, déplacement dans les fichiers
+  et téléchargement, sans application à installer.
+- **Comprendre les habitudes** : statistiques quotidiennes, historique et
+  graphiques sur 7 ou 30 jours, avec détail au toucher.
+- **Fonctionner au quotidien** : le détecteur et l’interface démarrent avec le Pi
+  et redémarrent automatiquement en cas d’arrêt.
+- **Garder les données chez soi** : journaux et audio restent sur le Pi. L’accès
+  à la page, aux statistiques et aux fichiers audio exige un code.
 
-1. Go to [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/) and download **ffmpeg-release-essentials.zip**
-2. Extract the zip to a permanent location, e.g. `C:\ffmpeg`
-3. Add the `bin` folder to your system PATH:
-   - Search Windows for **"Edit the system environment variables"**
-   - Click **Environment Variables**
-   - Under **System variables**, select **Path** → **Edit**
-   - Click **New** and add the path to the bin folder, e.g. `C:\ffmpeg\ffmpeg-7.x-essentials_build\bin`
-   - Click OK on all dialogs
-4. Open a new terminal and verify:
-   ```bash
-   ffmpeg -version
-   ```
+## Comment l’enregistrement fonctionne
 
-## Installation
+1. **Écouter.** [YAMNet](https://tfhub.dev/google/yamnet/1) analyse le microphone
+   en blocs de 1,2 seconde, en mono à 16 kHz.
+2. **Déclencher.** Deux blocs positifs consécutifs démarrent un enregistrement.
+   La minute précédente est conservée pour inclure le début des aboiements.
+3. **Continuer.** Chaque nouvelle détection prolonge l’enregistrement. Une courte
+   pause entre deux salves ne coupe pas le fichier.
+4. **Sauvegarder.** Après 10 secondes sans détection, le WAV terminé apparaît
+   dans l’interface. Il n’y a pas de limite d’un fichier par heure.
+
+L’audio est écrit progressivement sur disque pour éviter d’accumuler une longue
+série en mémoire. Si le détecteur vient de démarrer, il conserve l’historique
+disponible. Un arrêt propre sauvegarde l’enregistrement en cours ; une coupure
+brutale peut laisser un fichier temporaire incomplet, masqué dans l’interface.
+
+> **Ce que mesure le détecteur :** des blocs audio contenant des vocalisations
+> de chien, pas chaque « ouaf ». La classe `Dog` peut aussi couvrir des hurlements
+> et gémissements. Le modèle ne distingue pas votre chien de celui du voisin.
+
+## Installer sur un Raspberry Pi
+
+Testé sur un Pi sous **Linux ARM64 avec Python 3.13**, avec un microphone USB
+accessible via ALSA. Le premier lancement nécessite Internet pour télécharger
+YAMNet ; le modèle est ensuite mis en cache.
+
+### 1. Préparer le projet
 
 ```bash
-git clone https://github.com/SteveJ71/bark-detector.git
+sudo apt-get install python3-venv libportaudio2 libsndfile1
+git clone https://github.com/Dylan-Duault/bark-detector.git
 cd bark-detector
-py -3.12 -m venv .venv
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-Then activate the virtual environment by typing the following directly in your terminal (this is a terminal command, not a Python command).
-
-Check which terminal you are using — in VS Code look at the dropdown in the top right of the terminal panel:
+### 2. Choisir le code d’accès
 
 ```bash
-# Windows Command Prompt (cmd)
-.venv\Scripts\activate
-
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-
-# Mac / Linux
-source .venv/bin/activate
+cp .env.example .env
+chmod 600 .env
+nano .env
 ```
 
-Your terminal prompt will change to show `(.venv)` once active. Then install dependencies:
+Renseigner `DASHBOARD_PIN` avec **exactement quatre chiffres**, puis enregistrer.
+Le serveur refuse de démarrer sans code valide. Si le projet est déjà installé,
+conserver le `.env` existant. Ce fichier n’est pas envoyé dans Git.
 
-```bash
-pip install -r requirements.txt
-```
-
-## Usage
-
-### Real-time bark detection
-
-```bash
-python bark_session_logger.py
-```
-
-Press `Ctrl+C` to stop. Logs are written to `bark_log_YYYY-MM-DD.txt` in the same folder. WAV recordings are saved in `recordings/` as `bark_audio_YYYY-MM-DD_HH-MM-SS.wav`.
-
-### Daily diary summary
-
-```bash
-python diary_writer.py "path/to/log/files"
-```
-
-Writes `bark_diary_summary.txt` into the specified folder.
-
-### Heatmap and bar charts
-
-```bash
-python diary_plots.py "path/to/logs/2025" "path/to/logs/2026"
-```
-
-Saves plots as PNG files in a `Plots/` subfolder. Change `HEATMAP_METRIC` at the top of the file between `"minutes"` and `"barks"` to switch what is graphed.
-
-### Bark frequency graph
-
-```bash
-python plot_bark_graph.py "path/to/log/files"
-```
-
-Displays an interactive plot of bark frequency over time across all logged days.
-
-### Waveform images
-
-```bash
-python batch_waveforms.py "path/to/wav/files"
-```
-
-Generates a `_waveform.png` alongside each WAV file. Skips files that already have a PNG.
-
-## Configuration
-
-Key constants in `bark_session_logger.py` can be adjusted to suit your environment:
-
-| Constant | Default | Description |
-|---|---|---|
-| `MIN_BARK_VOLUME` | `0.012` | Minimum audio volume to count as a bark — increase to filter out distant dogs |
-| `SESSION_GAP_SECONDS` | `90` | Quiet gap (seconds) that ends a bark session |
-| `MIN_SESSION_DURATION` | `0` | Minimum session length (seconds) to be logged |
-| `MIN_BARKS_PER_SESSION` | `2` | Minimum bark count for a session to be logged |
-| `RECORD_DURATION` | `60` | Audio history retained before the trigger (seconds) |
-| `RECORD_QUIET_SECONDS` | `10` | Quiet gap before saving a complete recording (seconds) |
-| `CONSECUTIVE_BARKS` | `2` | Consecutive positive 1.2-second chunks required to save audio |
-
-## Output files
-
-| File | Description |
-|---|---|
-| `bark_log_YYYY-MM-DD.txt` | Daily log of individual barks and sessions |
-| `recordings/bark_audio_YYYY-MM-DD_HH-MM-SS.wav` | Audio recording of a bark session |
-| `bark_diary_summary.txt` | Human-readable summary of bark sessions |
-| `Plots/bark_heatmap_*.png` | Heatmap of barking by day and hour |
-| `Plots/bark_daily_totals_*.png` | Bar chart of daily barking totals |
-| `Plots/bark_hourly_profile_*.png` | Bar chart of barking by hour across all days |
-
-### Configuration locale : deux détections consécutives
-
-Lancer avec `.venv/bin/python bark_session_logger.py` sous Linux. Le premier
-lancement télécharge YAMNet et nécessite Internet. Sous Linux, PortAudio doit
-être installé (paquet `libportaudio2` sous Debian/Ubuntu).
-
-Deux blocs consécutifs de 1,2 seconde classés comme chien déclenchent
-l’enregistrement. Celui-ci inclut jusqu’aux 60 secondes précédentes et se poursuit
-jusqu’à 10 secondes sans détection. Chaque nouvelle détection, même isolée,
-repousse cette échéance. Une pause plus courte reste dans le même fichier.
-Le WAV final apparaît dans `recordings/` une fois terminé, sans limite horaire.
-L’audio est écrit progressivement sur disque ; seuls l’historique et les blocs
-en attente restent en mémoire. Un arrêt propre du service sauvegarde aussi
-l’enregistrement en cours. Les fichiers temporaires `.wav.part` sont masqués dans
-l’interface ; une coupure de courant peut laisser un fichier temporaire incomplet.
-Le modèle détecte des blocs contenant un chien, pas chaque aboiement individuel :
-deux aboiements dans un seul bloc peuvent ne pas déclencher la sauvegarde.
-
-## Tableau de bord web (mobile)
-
-Le détecteur conserve **la dernière minute avant le déclenchement**, puis toute
-la série d’aboiements et les 10 secondes sans détection qui la terminent.
-Si le programme tourne depuis moins d’une minute, seul l’historique disponible
-est inclus. Le nom du fichier indique l’heure du déclenchement. Les anciens
-fichiers restent consultables, avec leur durée et leur contenu d’origine.
-
-Dans un premier terminal, lancer le détecteur :
-
-```bash
-.venv/bin/python bark_session_logger.py
-```
-
-Avant le premier lancement, copier `.env.example` vers `.env`, puis définir
-`DASHBOARD_PIN` avec un code de quatre chiffres. Le serveur refuse de démarrer
-sans un code valide. Ne jamais publier `.env`.
-
-Dans un second terminal, lancer la page web (Python standard, sans dépendance web) :
-
-```bash
-.venv/bin/python web_server.py
-```
-
-Sur cette machine : **http://localhost:8080**.
-Sur le téléphone connecté au **même Wi-Fi** : **http://IP-DE-LA-MACHINE:8080**.
-Sous Linux, `hostname -I` permet de trouver l’adresse locale, par exemple
-`192.168.1.42`, soit `http://192.168.1.42:8080`. Autoriser le port TCP 8080 sur le
-réseau local dans le pare-feu si nécessaire. Les deux programmes doivent rester
-lancés et la machine éveillée.
-
-La page propose :
-
-- les détections, sessions terminées, durée des sessions et nombre de fichiers ;
-- les détections heure par heure, un sélecteur de date et l’historique des jours ;
-- l’écoute audio avec déplacement dans le fichier et téléchargement ;
-- une actualisation toutes les 30 secondes qui préserve la lecture en cours.
-
-Les détections sont des blocs audio de 1,2 seconde, pas un comptage exact des
-aboiements. Les durées concernent les sessions terminées et incluent les pauses
-entre aboiements d’une même session. Une session apparaît après 90 secondes de
-calme. Les anciens fichiers WAV restent consultables avec leur durée d’origine.
-
-Le serveur lit les logs et WAV existants à chaque actualisation ; il peut donc
-être utilisé sans lancer le détecteur pour consulter l’historique. Aucun fichier
-n’est envoyé vers un service externe. L’accès exige le code défini dans `.env`,
-y compris pour les statistiques et les fichiers audio. Le serveur HTTP est prévu
-pour un réseau local de confiance : ne pas ouvrir ce port sur Internet.
-Pour un accès limité à cette machine :
-
-```bash
-.venv/bin/python web_server.py --host 127.0.0.1
-```
-
-Options : `--port 8080`, `--data-dir /chemin/vers/le/dossier-de-donnees`.
-Vérifications : `python3 -m unittest discover -s tests -v`.
-
-## Démarrage automatique sur Raspberry Pi
-
-Après installation des dépendances dans `.venv` et configuration du code dans `.env`, exécuter depuis le dépôt :
+### 3. Activer le démarrage automatique
 
 ```bash
 sudo .venv/bin/python install_services.py
 ```
 
-L’installateur utilise le compte qui a lancé `sudo`, le chemin réel du dépôt et
-son environnement `.venv`. Il active et démarre deux services indépendants :
-`bark-detector` (microphone) et `bark-dashboard` (page web sur le port 8080).
-Ils démarrent sans ouverture de session et redémarrent automatiquement en cas
-d’arrêt. Le compte du service a accès au groupe `audio`. Un micro USB/ALSA est
-recommandé pour fonctionner sans session graphique. Le premier démarrage
-nécessite Internet pour télécharger YAMNet ; le modèle est ensuite mis en cache
-dans `/var/cache/bark-detector/yamnet`.
+L’installateur configure et démarre deux services indépendants :
 
-Ne pas lancer une deuxième instance manuelle du détecteur en parallèle.
+| Service | Rôle |
+| --- | --- |
+| `bark-detector` | Écoute du micro, détection, enregistrements et journaux |
+| `bark-dashboard` | Interface web sur le port `8080` |
+
+Ils fonctionnent sous le compte qui a lancé `sudo`, sans avoir besoin d’ouvrir
+une session. Le détecteur dispose de l’accès au groupe `audio`.
+
+### 4. Ouvrir le journal sur le téléphone
+
+Sur le **même réseau Wi-Fi**, ouvrir :
+
+```text
+http://raspberrypi.local:8080
+```
+
+Si ce nom n’est pas reconnu, utiliser `http://IP-DU-PI:8080` ; `hostname -I`
+affiche les adresses du Pi. Sur le Pi lui-même : `http://localhost:8080`.
+La machine doit rester allumée et le microphone branché.
+
+## Lire les statistiques
+
+Choisir une date pour retrouver ses détections, sessions terminées et fichiers
+audio. La page s’actualise toutes les 30 secondes sans interrompre une écoute.
+
+Les graphiques sont **en bas de page** :
+
+| Graphique | À quoi il sert |
+| --- | --- |
+| Évolution quotidienne | Comparer le temps passé en sessions terminées d’un jour à l’autre |
+| Calendrier de chaleur | Repérer les heures et les jours où les détections se répètent |
+| Activité horaire cumulée | Identifier les heures les plus animées sur la période |
+
+Le sélecteur **7 / 30 jours** couvre la période se terminant à la date choisie.
+Toucher une barre ou une case affiche le détail. Sur mobile, faire glisser le
+calendrier horizontalement pour parcourir les heures.
+
+Une **session statistique** se termine après 90 secondes sans détection. Sa
+durée inclut les pauses entre aboiements : ce n’est ni le temps de vocalisation
+exact ni la durée du fichier audio. La journée en cours peut être incomplète.
+Les jours sans journal sont hachurés ; un journal présent ne garantit pas une
+journée entière d’écoute.
+
+## Accès et confidentialité
+
+Le code protège aussi les URL directes des statistiques et des enregistrements.
+Une mauvaise entrée impose un délai de **2, 4, 8, 16, 32 puis 60 secondes**, par
+adresse IP. Recharger la page ne supprime pas l’attente. Une connexion réussie
+remet le compteur à zéro.
+
+La session dure **12 heures**, ou jusqu’à la déconnexion. Le cookie est
+`HttpOnly` et `SameSite=Strict`. Les sessions et délais sont conservés en mémoire
+et réinitialisés au redémarrage du serveur. Le code n’est présent ni dans le
+JavaScript, ni dans les URL ou les journaux.
+
+> Ce serveur HTTP est destiné à un **réseau local de confiance**. Les échanges
+> ne sont pas chiffrés : ne pas ouvrir directement son port sur Internet.
+
+Pour changer le code, modifier `.env`, puis lancer :
 
 ```bash
-# État et journaux
+sudo systemctl restart bark-dashboard
+```
+
+## Gérer le Pi
+
+```bash
+# Vérifier les services
 systemctl status bark-detector bark-dashboard
+
+# Suivre les journaux techniques
 journalctl -u bark-detector -u bark-dashboard -f
 
-# Redémarrer après une modification du code
+# Appliquer une modification du code
 sudo systemctl restart bark-detector bark-dashboard
 
 # Arrêter et désactiver le démarrage automatique
 sudo systemctl disable --now bark-detector bark-dashboard
 ```
 
-Après déplacement du dépôt, relancer l’installateur. Pour choisir un autre
-compte : `sudo .venv/bin/python install_services.py --user NOM`.
-Pour générer les unités sans les installer :
-`python3 install_services.py --output-dir /tmp/bark-services`.
-La page est accessible via `http://raspberrypi.local:8080` si le réseau prend en
-charge mDNS, ou via l’adresse IP locale du Pi.
+Relancer l’installateur après déplacement du dépôt ou modification des unités
+systemd. Le cache du modèle est dans `/var/cache/bark-detector/yamnet`.
 
-Les fichiers audio sont stockés dans `recordings/`, créé automatiquement par le
-détecteur. Le serveur lit les journaux à la racine du dossier de données et les
-WAV dans son sous-dossier `recordings/`.
+<details>
+<summary>Lancement manuel et options du serveur</summary>
 
-### Graphiques sur 7 ou 30 jours
+Arrêter d’abord les services correspondants pour éviter de lancer deux
+détecteurs sur le même microphone. Utiliser ensuite deux terminaux :
 
-Les graphiques couvrent la période qui se termine à la date sélectionnée :
-barres du temps quotidien en sessions terminées, calendrier des détections par
-jour et heure, et détections horaires cumulées. Toucher une barre ou une case
-sur mobile affiche le détail. Le calendrier se fait défiler horizontalement.
-Les jours sans journal sont hachurés ; la présence d’un journal ne garantit pas
-une journée complète d’écoute. La journée en cours et ses sessions sont partielles.
+```bash
+.venv/bin/python bark_session_logger.py
+.venv/bin/python web_server.py
+```
 
-### Code d’accès à l’interface
+Le serveur peut consulter l’historique même si le détecteur est arrêté.
 
-Définir `DASHBOARD_PIN` dans `.env` à la racine du dépôt : exactement quatre
-chiffres, y compris les éventuels zéros initiaux. `.env` est ignoré par Git.
-Le code n’est transmis ni dans les URL, ni dans le JavaScript ou les journaux.
-Après modification : `sudo systemctl restart bark-dashboard`.
+| Option | Usage |
+| --- | --- |
+| `--port 8080` | Changer le port web |
+| `--host 127.0.0.1` | Limiter l’accès à la machine locale |
+| `--data-dir /chemin/vers/les/donnees` | Lire un autre dossier de journaux et d’audio |
 
-Chaque échec impose une attente par adresse IP de 2, 4, 8, 16, 32 puis 60 secondes.
-Le serveur refuse aussi un code correct tant que le délai n’est pas écoulé.
-Une connexion réussie remet le compteur à zéro. Les délais et sessions sont
-conservés en mémoire et réinitialisés au redémarrage du serveur.
+L’installateur accepte `--user NOM` pour un autre compte. Pour générer les
+unités sans les installer :
 
-La session expire après 12 heures ou lors de la déconnexion. Le cookie est
-`HttpOnly` et `SameSite=Strict`. La page, les statistiques et les enregistrements
-exigent une session valide ; l’écran de connexion et son style restent publics.
-Sur le serveur HTTP local, le code et le cookie ne sont pas chiffrés en transit.
+```bash
+python3 install_services.py --output-dir /tmp/bark-services
+```
+
+</details>
+
+<details>
+<summary>Ajuster la sensibilité et les durées</summary>
+
+Les constantes se trouvent dans `bark_session_logger.py`. Après modification,
+redémarrer `bark-detector`.
+
+| Réglage | Valeur | Rôle |
+| --- | --- | --- |
+| `MIN_BARK_VOLUME` | `0.012` | Volume moyen minimal ; augmenter filtre davantage les sons faibles |
+| `TOP_N_CLASSES` | `5` | La classe recherchée doit figurer parmi ces premiers résultats |
+| `BARK_CLASS_NAME` | `Dog` | Catégorie recherchée |
+| `CONSECUTIVE_BARKS` | `2` | Blocs positifs consécutifs nécessaires au déclenchement |
+| `RECORD_DURATION` | `60` | Historique audio avant le déclenchement, en secondes |
+| `RECORD_QUIET_SECONDS` | `10` | Délai sans détection avant la fin d’un enregistrement |
+| `SESSION_GAP_SECONDS` | `90` | Délai sans détection avant la fin d’une session statistique |
+| `MIN_BARKS_PER_SESSION` | `2` | Détections minimales pour journaliser une session |
+| `MIN_SESSION_DURATION` | `0` | Durée minimale d’une session statistique, en secondes |
+
+Le volume est un seuil numérique, pas une mesure en décibels. L’application ne
+modifie pas le gain matériel du micro, qui dépend des réglages du système.
+Aucun seuil minimal de confiance YAMNet n’est imposé en plus du classement.
+
+</details>
+
+## Organisation du projet
+
+| Fichier ou dossier | Usage |
+| --- | --- |
+| `bark_session_logger.py` | Détection et journaux utilisés par les statistiques |
+| `audio_recording.py` | Tampon audio et écriture des enregistrements |
+| `web_server.py` | Serveur HTTP, statistiques et lecture audio |
+| `dashboard_auth.py` | Code d’accès, sessions et délais |
+| `web/` | Interface mobile, connexion et graphiques |
+| `install_services.py`, `systemd/` | Installation et démarrage automatique |
+| `yamnet_class_map.csv` | Les 521 catégories du modèle |
+| `tests/` | Vérifications audio, statistiques, authentification et installation |
+| `docs/images/` | Captures d’écran de l’interface |
+
+Les données restent locales et sont exclues de Git :
+
+- `.env` : code d’accès ;
+- `bark_log_YYYY-MM-DD.txt` : détections et sessions ;
+- `recordings/bark_audio_YYYY-MM-DD_HH-MM-SS.wav` : audio terminé, nommé à l’heure
+  du déclenchement ;
+- `recordings/*.wav.part` : enregistrement temporaire, absent de l’interface.
+
+## Vérifications
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+Les tests utilisent des données et serveurs temporaires, sans microphone ni
+chargement de YAMNet. TensorFlow est nécessaire au détecteur ; le serveur web
+et l’authentification utilisent uniquement Python standard.
+
+## Origine et licence
+
+Ce projet est un fork de [SteveJ71/bark-detector](https://github.com/SteveJ71/bark-detector),
+adapté à un usage quotidien sur Raspberry Pi avec une interface web mobile.
+Il est distribué sous [licence MIT](LICENSE).

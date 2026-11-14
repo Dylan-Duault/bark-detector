@@ -12,7 +12,6 @@ WorkingDirectory=@PROJECT@
 ExecStart=@PYTHON@ -u @PROJECT_ARG@/bark_session_logger.py
 Environment=PYTHONUNBUFFERED=1
 Environment=TFHUB_CACHE_DIR=/var/cache/bark-detector/yamnet
-Environment=MPLCONFIGDIR=/var/cache/bark-detector/matplotlib
 CacheDirectory=bark-detector
 Restart=always
 RestartSec=10

@@ -80,24 +80,6 @@ def log_session(start, end, count):
         f.write(entry + '\n')
 
 
-def format_duration(seconds):
-    seconds = int(seconds)
-    if seconds >= 3600:
-        return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
-    elif seconds >= 60:
-        return f"{seconds // 60}m"
-    return f"{seconds}s"
-
-
-def log_summary(total_duration, total_barks):
-    end_time = datetime.datetime.now()
-    formatted = format_duration(total_duration)
-    entry = f"[SUMMARY] Session ended at {end_time:%Y-%m-%d %H:%M:%S} | Total barking time: {formatted} | Total barks: {total_barks}"
-    print(entry)
-    with open(get_log_file_path(), 'a') as f:
-        f.write(entry + '\n')
-
-
 def main():
     yamnet_model = load_yamnet()
     class_map = load_class_map()
@@ -117,9 +99,7 @@ def main():
 
     recent_barks = deque()
     active_session = None
-    total_bark_duration = 0
     current_bark_count = 0
-    total_barks = 0
 
     try:
         while True:
@@ -142,7 +122,6 @@ def main():
                 log_bark(now, bark_volume)
                 recent_barks.append(now)
                 current_bark_count += 1
-                total_barks += 1
 
             while recent_barks and (now - recent_barks[0]).total_seconds() > SESSION_GAP_SECONDS:
                 recent_barks.popleft()
@@ -157,7 +136,6 @@ def main():
                     duration = (now - active_session).total_seconds() - SESSION_GAP_SECONDS
                     if duration >= MIN_SESSION_DURATION and current_bark_count >= MIN_BARKS_PER_SESSION:
                         log_session(active_session, now, current_bark_count)
-                        total_bark_duration += duration
                     else:
                         print(f"[SKIPPED SESSION] From {active_session} to {now} - below threshold")
                     active_session = None
@@ -170,10 +148,8 @@ def main():
             duration = (now - active_session).total_seconds() - SESSION_GAP_SECONDS
             if duration >= MIN_SESSION_DURATION and current_bark_count >= MIN_BARKS_PER_SESSION:
                 log_session(active_session, now, current_bark_count)
-                total_bark_duration += duration
             else:
                 print(f"[SKIPPED SESSION] From {active_session} to {now} - below threshold")
-        log_summary(total_bark_duration, total_barks)
     finally:
         try:
             stream.stop()

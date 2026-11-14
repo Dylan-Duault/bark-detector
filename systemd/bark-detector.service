@@ -1,0 +1,23 @@
+[Unit]
+Description=Dog bark detection and audio recording
+Wants=network-online.target
+After=network-online.target sound.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@USER@
+SupplementaryGroups=audio
+WorkingDirectory=@PROJECT@
+ExecStart=@PYTHON@ -u @PROJECT_ARG@/bark_session_logger.py
+Environment=PYTHONUNBUFFERED=1
+Environment=TFHUB_CACHE_DIR=/var/cache/bark-detector/yamnet
+Environment=MPLCONFIGDIR=/var/cache/bark-detector/matplotlib
+CacheDirectory=bark-detector
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

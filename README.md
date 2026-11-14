@@ -9,7 +9,7 @@ A Python tool for real-time dog bark detection and logging using the [YAMNet](ht
 - Detects bark events by volume threshold and class confidence
 - Groups individual barks into sessions separated by quiet gaps
 - Logs bark events and sessions to a daily text file
-- Saves a WAV recording for qualifying sessions (at most once per hour)
+- Saves the last 60 seconds as a WAV as soon as two consecutive audio chunks contain barking
 
 ## Scripts
 
@@ -89,7 +89,7 @@ pip install -r requirements.txt
 python bark_session_logger.py
 ```
 
-Press `Ctrl+C` to stop. Logs are written to `bark_log_YYYY-MM-DD.txt` in the same folder. WAV recordings are saved as `bark_audio_YYYY-MM-DD_HH-MM-SS.wav`.
+Press `Ctrl+C` to stop. Logs are written to `bark_log_YYYY-MM-DD.txt` in the same folder. WAV recordings are saved in `recordings/` as `bark_audio_YYYY-MM-DD_HH-MM-SS.wav`.
 
 ### Daily diary summary
 
@@ -131,18 +131,133 @@ Key constants in `bark_session_logger.py` can be adjusted to suit your environme
 |---|---|---|
 | `MIN_BARK_VOLUME` | `0.012` | Minimum audio volume to count as a bark — increase to filter out distant dogs |
 | `SESSION_GAP_SECONDS` | `90` | Quiet gap (seconds) that ends a bark session |
-| `MIN_SESSION_DURATION` | `20` | Minimum session length (seconds) to be logged |
-| `MIN_BARKS_PER_SESSION` | `10` | Minimum bark count for a session to be logged |
-| `RECORD_DURATION` | `240` | Length of WAV recording saved per session (seconds) |
-| `RECORD_INTERVAL` | `3600` | Minimum time between WAV recordings (seconds) |
+| `MIN_SESSION_DURATION` | `0` | Minimum session length (seconds) to be logged |
+| `MIN_BARKS_PER_SESSION` | `2` | Minimum bark count for a session to be logged |
+| `RECORD_DURATION` | `60` | Maximum rolling audio history saved on detection (seconds) |
+| `CONSECUTIVE_BARKS` | `2` | Consecutive positive 1.2-second chunks required to save audio |
 
 ## Output files
 
 | File | Description |
 |---|---|
 | `bark_log_YYYY-MM-DD.txt` | Daily log of individual barks and sessions |
-| `bark_audio_YYYY-MM-DD_HH-MM-SS.wav` | Audio recording of a bark session |
+| `recordings/bark_audio_YYYY-MM-DD_HH-MM-SS.wav` | Audio recording of a bark session |
 | `bark_diary_summary.txt` | Human-readable summary of bark sessions |
 | `Plots/bark_heatmap_*.png` | Heatmap of barking by day and hour |
 | `Plots/bark_daily_totals_*.png` | Bar chart of daily barking totals |
 | `Plots/bark_hourly_profile_*.png` | Bar chart of barking by hour across all days |
+
+### Configuration locale : deux détections consécutives
+
+Lancer avec `.venv/bin/python bark_session_logger.py` sous Linux. Le premier
+lancement télécharge YAMNet et nécessite Internet. Sous Linux, PortAudio doit
+être installé (paquet `libportaudio2` sous Debian/Ubuntu).
+
+Un WAV contenant jusqu’aux 60 dernières secondes est sauvegardé immédiatement
+après deux blocs consécutifs de 1,2 seconde classés comme aboiements. Les
+aboiements déclencheurs sont inclus. Un bloc sans aboiement réarme le
+déclenchement ; une série continue produit un seul fichier, sans limite horaire.
+Le modèle détecte des blocs contenant un chien, pas chaque aboiement individuel :
+deux aboiements dans un seul bloc peuvent ne pas déclencher la sauvegarde.
+
+## Tableau de bord web (mobile)
+
+Le détecteur sauvegarde maintenant **la dernière minute** au déclenchement après
+les deux détections consécutives. Si le programme tourne depuis moins d’une
+minute, le fichier contient l’historique disponible. Il n’enregistre pas la
+minute suivante.
+
+Dans un premier terminal, lancer le détecteur :
+
+```bash
+.venv/bin/python bark_session_logger.py
+```
+
+Dans un second terminal, lancer la page web (Python standard, sans dépendance web) :
+
+```bash
+.venv/bin/python web_server.py
+```
+
+Sur cette machine : **http://localhost:8080**.
+Sur le téléphone connecté au **même Wi-Fi** : **http://IP-DE-LA-MACHINE:8080**.
+Sous Linux, `hostname -I` permet de trouver l’adresse locale, par exemple
+`192.168.1.42`, soit `http://192.168.1.42:8080`. Autoriser le port TCP 8080 sur le
+réseau local dans le pare-feu si nécessaire. Les deux programmes doivent rester
+lancés et la machine éveillée.
+
+La page propose :
+
+- les détections, sessions terminées, durée des sessions et nombre de fichiers ;
+- les détections heure par heure, un sélecteur de date et l’historique des jours ;
+- l’écoute audio avec déplacement dans le fichier et téléchargement ;
+- une actualisation toutes les 30 secondes qui préserve la lecture en cours.
+
+Les détections sont des blocs audio de 1,2 seconde, pas un comptage exact des
+aboiements. Les durées concernent les sessions terminées et incluent les pauses
+entre aboiements d’une même session. Une session apparaît après 90 secondes de
+calme. Les anciens fichiers WAV restent consultables avec leur durée d’origine.
+
+Le serveur lit les logs et WAV existants à chaque actualisation ; il peut donc
+être utilisé sans lancer le détecteur pour consulter l’historique. Aucun fichier
+n’est envoyé vers un service externe. L’accès est sans mot de passe, prévu pour
+un réseau local de confiance : ne pas ouvrir ce port sur Internet.
+Pour un accès limité à cette machine :
+
+```bash
+.venv/bin/python web_server.py --host 127.0.0.1
+```
+
+Options : `--port 8080`, `--data-dir /chemin/vers/le/dossier-de-donnees`.
+Vérifications : `python3 -m unittest discover -s tests -v`.
+
+## Démarrage automatique sur Raspberry Pi
+
+Après installation des dépendances dans `.venv`, exécuter depuis le dépôt :
+
+```bash
+sudo .venv/bin/python install_services.py
+```
+
+L’installateur utilise le compte qui a lancé `sudo`, le chemin réel du dépôt et
+son environnement `.venv`. Il active et démarre deux services indépendants :
+`bark-detector` (microphone) et `bark-dashboard` (page web sur le port 8080).
+Ils démarrent sans ouverture de session et redémarrent automatiquement en cas
+d’arrêt. Le compte du service a accès au groupe `audio`. Un micro USB/ALSA est
+recommandé pour fonctionner sans session graphique. Le premier démarrage
+nécessite Internet pour télécharger YAMNet ; le modèle est ensuite mis en cache
+dans `/var/cache/bark-detector/yamnet`.
+
+Ne pas lancer une deuxième instance manuelle du détecteur en parallèle.
+
+```bash
+# État et journaux
+systemctl status bark-detector bark-dashboard
+journalctl -u bark-detector -u bark-dashboard -f
+
+# Redémarrer après une modification du code
+sudo systemctl restart bark-detector bark-dashboard
+
+# Arrêter et désactiver le démarrage automatique
+sudo systemctl disable --now bark-detector bark-dashboard
+```
+
+Après déplacement du dépôt, relancer l’installateur. Pour choisir un autre
+compte : `sudo .venv/bin/python install_services.py --user NOM`.
+Pour générer les unités sans les installer :
+`python3 install_services.py --output-dir /tmp/bark-services`.
+La page est accessible via `http://raspberrypi.local:8080` si le réseau prend en
+charge mDNS, ou via l’adresse IP locale du Pi.
+
+Les fichiers audio sont stockés dans `recordings/`, créé automatiquement par le
+détecteur. Le serveur lit les journaux à la racine du dossier de données et les
+WAV dans son sous-dossier `recordings/`.
+
+### Graphiques sur 7 ou 30 jours
+
+Les graphiques couvrent la période qui se termine à la date sélectionnée :
+barres du temps quotidien en sessions terminées, calendrier des détections par
+jour et heure, et détections horaires cumulées. Toucher une barre ou une case
+sur mobile affiche le détail. Le calendrier se fait défiler horizontalement.
+Les jours sans journal sont hachurés ; la présence d’un journal ne garantit pas
+une journée complète d’écoute. La journée en cours et ses sessions sont partielles.

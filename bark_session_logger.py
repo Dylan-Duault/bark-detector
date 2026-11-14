@@ -22,12 +22,12 @@ CHUNK_DURATION = 1.2  # seconds
 CHUNK_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION)
 TOP_N_CLASSES = 5
 BARK_CLASS_NAME = "Dog"
-MIN_SESSION_DURATION = 20  # seconds
-MIN_BARKS_PER_SESSION = 10
+MIN_SESSION_DURATION = 0  # Log short sessions too
+MIN_BARKS_PER_SESSION = 2
 SESSION_GAP_SECONDS = 90
 MIN_BARK_VOLUME = 0.012  # Filter out quiet barks (distant dogs)
-RECORD_DURATION = 4 * 60  # 4 minutes
-RECORD_INTERVAL = 3600  # Only one recording per hour
+RECORD_DURATION = 60  # Rolling audio history saved immediately on detection
+CONSECUTIVE_BARKS = 2  # Consecutive positive 1.2-second chunks
 
 
 def get_log_file_path():
@@ -53,14 +53,14 @@ def load_class_map():
 class AudioBuffer:
     def __init__(self):
         self.buffer = deque(maxlen=CHUNK_SAMPLES)
-        self.recording_buffer = []
+        self.recording_buffer = deque(maxlen=SAMPLE_RATE * RECORD_DURATION)
 
     def callback(self, indata, frames, time_info, status):
         if status:
             print(f"[WARNING] InputStream status: {status}")
         mono = indata[:, 0].copy()
         self.buffer.extend(mono)
-        self.recording_buffer.append(mono)
+        self.recording_buffer.extend(mono)
 
     def read_chunk(self):
         if len(self.buffer) >= CHUNK_SAMPLES:
@@ -71,7 +71,7 @@ class AudioBuffer:
         self.recording_buffer.clear()
 
     def get_recording_data(self):
-        return np.concatenate(self.recording_buffer) if self.recording_buffer else np.array([])
+        return np.array(self.recording_buffer.copy(), dtype=np.float32)
 
 
 def log_header():
@@ -123,8 +123,10 @@ def log_summary(total_duration, total_barks):
 
 def save_wav(audio_data, timestamp):
     filename = f"bark_audio_{timestamp:%Y-%m-%d_%H-%M-%S}.wav"
-    filepath = os.path.join(os.path.dirname(__file__), filename)
+    recordings_dir = os.path.join(os.path.dirname(__file__), "recordings")
+    filepath = os.path.join(recordings_dir, filename)
     try:
+        os.makedirs(recordings_dir, exist_ok=True)
         sf.write(filepath, audio_data, SAMPLE_RATE)
         print(f"[WAV] Saved recording: {filename}")
     except Exception as e:
@@ -135,7 +137,6 @@ def main():
     yamnet_model = load_yamnet()
     class_map = load_class_map()
     audio_buffer = AudioBuffer()
-    session_audio_saved = False  # Only allow one recording per session
 
     log_header()
     print("Listening for dog barks in real-time...")
@@ -152,7 +153,7 @@ def main():
     total_bark_duration = 0
     current_bark_count = 0
     total_barks = 0
-    last_record_time = None
+    consecutive_barks = 0
 
     try:
         while True:
@@ -167,7 +168,12 @@ def main():
             top_classes = [class_map[i] for i in mean_scores.argsort()[-TOP_N_CLASSES:][::-1]]
             bark_volume = np.mean(np.abs(chunk))
 
-            if BARK_CLASS_NAME in top_classes and bark_volume >= MIN_BARK_VOLUME:
+            is_bark = BARK_CLASS_NAME in top_classes and bark_volume >= MIN_BARK_VOLUME
+            consecutive_barks = consecutive_barks + 1 if is_bark else 0
+            if consecutive_barks == CONSECUTIVE_BARKS:
+                save_wav(audio_buffer.get_recording_data(), now)
+
+            if is_bark:
                 log_bark(now, bark_volume)
                 recent_barks.append(now)
                 current_bark_count += 1
@@ -180,32 +186,6 @@ def main():
                 if not active_session:
                     active_session = recent_barks[0]
                     current_bark_count = len(recent_barks)
-                    session_audio_saved = False  # Reset flag for new session
-                else:
-                    session_duration = (now - active_session).total_seconds()
-
-                    hour_has_passed = (
-                        last_record_time is None
-                        or (now - last_record_time).total_seconds() >= RECORD_INTERVAL
-                    )
-                    audio_ready = len(audio_buffer.get_recording_data()) >= SAMPLE_RATE * RECORD_DURATION
-
-                    should_save = (
-                        not session_audio_saved
-                        and hour_has_passed
-                        and session_duration >= MIN_SESSION_DURATION
-                        and current_bark_count >= MIN_BARKS_PER_SESSION
-                        and audio_ready
-                    )
-
-                    if should_save:
-                        audio_data = audio_buffer.get_recording_data()
-                        max_samples = SAMPLE_RATE * RECORD_DURATION
-                        trimmed = audio_data[-max_samples:] if len(audio_data) >= max_samples else audio_data
-                        save_wav(trimmed, now)
-                        last_record_time = now
-                        session_audio_saved = True
-                        audio_buffer.clear_recording_buffer()
 
             else:
                 if active_session:
@@ -217,7 +197,6 @@ def main():
                         print(f"[SKIPPED SESSION] From {active_session} to {now} - below threshold")
                     active_session = None
                     current_bark_count = 0
-                    audio_buffer.clear_recording_buffer()
 
     except KeyboardInterrupt:
         print("Stopped. Analyzing bark sessions...")

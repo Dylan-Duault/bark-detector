@@ -14,7 +14,7 @@ import datetime
 import time
 from collections import deque
 import csv
-import soundfile as sf
+from audio_recording import AudioBuffer, BarkRecorder
 
 # Constants
 SAMPLE_RATE = 16000
@@ -26,7 +26,8 @@ MIN_SESSION_DURATION = 0  # Log short sessions too
 MIN_BARKS_PER_SESSION = 2
 SESSION_GAP_SECONDS = 90
 MIN_BARK_VOLUME = 0.012  # Filter out quiet barks (distant dogs)
-RECORD_DURATION = 60  # Rolling audio history saved immediately on detection
+RECORD_DURATION = 60  # Seconds of audio retained before the trigger
+RECORD_QUIET_SECONDS = 10  # Keep recording until no detection for this long
 CONSECUTIVE_BARKS = 2  # Consecutive positive 1.2-second chunks
 
 
@@ -48,30 +49,6 @@ def load_class_map():
         reader = csv.reader(csvfile)
         next(reader)  # Skip header
         return [row[2] for row in reader]
-
-
-class AudioBuffer:
-    def __init__(self):
-        self.buffer = deque(maxlen=CHUNK_SAMPLES)
-        self.recording_buffer = deque(maxlen=SAMPLE_RATE * RECORD_DURATION)
-
-    def callback(self, indata, frames, time_info, status):
-        if status:
-            print(f"[WARNING] InputStream status: {status}")
-        mono = indata[:, 0].copy()
-        self.buffer.extend(mono)
-        self.recording_buffer.extend(mono)
-
-    def read_chunk(self):
-        if len(self.buffer) >= CHUNK_SAMPLES:
-            return np.array([self.buffer.popleft() for _ in range(CHUNK_SAMPLES)], dtype=np.float32)
-        return None
-
-    def clear_recording_buffer(self):
-        self.recording_buffer.clear()
-
-    def get_recording_data(self):
-        return np.array(self.recording_buffer.copy(), dtype=np.float32)
 
 
 def log_header():
@@ -121,22 +98,12 @@ def log_summary(total_duration, total_barks):
         f.write(entry + '\n')
 
 
-def save_wav(audio_data, timestamp):
-    filename = f"bark_audio_{timestamp:%Y-%m-%d_%H-%M-%S}.wav"
-    recordings_dir = os.path.join(os.path.dirname(__file__), "recordings")
-    filepath = os.path.join(recordings_dir, filename)
-    try:
-        os.makedirs(recordings_dir, exist_ok=True)
-        sf.write(filepath, audio_data, SAMPLE_RATE)
-        print(f"[WAV] Saved recording: {filename}")
-    except Exception as e:
-        print(f"[ERROR] Failed to save WAV: {e}")
-
-
 def main():
     yamnet_model = load_yamnet()
     class_map = load_class_map()
-    audio_buffer = AudioBuffer()
+    audio_buffer = AudioBuffer(SAMPLE_RATE, CHUNK_SAMPLES, RECORD_DURATION)
+    recorder = BarkRecorder(audio_buffer, os.path.join(os.path.dirname(__file__), "recordings"),
+                            SAMPLE_RATE, CONSECUTIVE_BARKS, RECORD_QUIET_SECONDS)
 
     log_header()
     print("Listening for dog barks in real-time...")
@@ -153,13 +120,13 @@ def main():
     total_bark_duration = 0
     current_bark_count = 0
     total_barks = 0
-    consecutive_barks = 0
 
     try:
         while True:
             now = datetime.datetime.now()
             chunk = audio_buffer.read_chunk()
             if chunk is None:
+                recorder.poll(time.monotonic())
                 time.sleep(0.05)
                 continue
 
@@ -169,9 +136,7 @@ def main():
             bark_volume = np.mean(np.abs(chunk))
 
             is_bark = BARK_CLASS_NAME in top_classes and bark_volume >= MIN_BARK_VOLUME
-            consecutive_barks = consecutive_barks + 1 if is_bark else 0
-            if consecutive_barks == CONSECUTIVE_BARKS:
-                save_wav(audio_buffer.get_recording_data(), now)
+            recorder.update(is_bark, time.monotonic(), now)
 
             if is_bark:
                 log_bark(now, bark_volume)
@@ -210,8 +175,13 @@ def main():
                 print(f"[SKIPPED SESSION] From {active_session} to {now} - below threshold")
         log_summary(total_bark_duration, total_barks)
     finally:
-        stream.stop()
-        stream.close()
+        try:
+            stream.stop()
+        finally:
+            try:
+                recorder.finish()
+            finally:
+                stream.close()
 
 
 if __name__ == '__main__':

@@ -73,8 +73,48 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(len(data['recordings']), 1)
         self.assertEqual(dashboard_data(self.directory, '2026-11-13')['summary']['detections'], 0)
 
+    def test_authentication_covers_api_audio_and_logout(self):
+        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.directory, '1234'))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = http.client.HTTPConnection(*server.server_address)
+        def call(method, path, body=None, headers=None):
+            client.request(method, path, body=body, headers=headers or {})
+            response = client.getresponse()
+            result = response.status, dict(response.getheaders()), response.read()
+            return result
+        try:
+            self.assertEqual(call('GET', '/')[0], 303)
+            for method in ('GET', 'HEAD'):
+                for path in ('/api/dashboard', '/audio/'+self.name, '/app.js'):
+                    self.assertEqual(call(method, path)[0], 401)
+            self.assertEqual(call('GET', '/login')[0], 200)
+            self.assertEqual(call('GET', '/login.js')[0], 200)
+            self.assertEqual(call('POST', '/api/login', '{"pin":"1234"}', {'Origin':'http://evil.example'})[0], 403)
+            status, headers, _ = call('POST', '/api/login', '{"pin":"1234"}')
+            self.assertEqual(status, 200)
+            cookie = headers['Set-Cookie']
+            self.assertIn('HttpOnly', cookie)
+            self.assertIn('SameSite=Strict', cookie)
+            self.assertNotIn('1234', cookie)
+            session = {'Cookie':cookie.split(';')[0]}
+            self.assertEqual(call('GET', '/api/dashboard', headers=session)[0], 200)
+            self.assertEqual(call('GET', '/audio/'+self.name, headers=dict(session, Range='bytes=0-43'))[0], 206)
+            self.assertEqual(call('GET', '/.env', headers=session)[0], 404)
+            status, headers, _ = call('POST', '/api/login', '{"pin":"0000"}')
+            self.assertEqual(status, 401)
+            self.assertEqual(headers['Retry-After'], '2')
+            self.assertEqual(call('POST', '/api/login', '{"pin":"1234"}')[0], 429)
+            self.assertEqual(call('POST', '/api/logout', headers=session)[0], 200)
+            self.assertEqual(call('GET', '/api/dashboard', headers=session)[0], 401)
+        finally:
+            client.close()
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_http_audio_seeking_and_path_restrictions(self):
-        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.directory))
+        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.directory, '1234'))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         client = http.client.HTTPConnection(*server.server_address)
@@ -83,6 +123,14 @@ class DashboardTests(unittest.TestCase):
             response = client.getresponse()
             return response.status, dict(response.getheaders()), response.read()
         try:
+            client.request('POST', '/api/login', body=json.dumps({'pin':'1234'}), headers={'Content-Type':'application/json'})
+            login = client.getresponse()
+            self.assertEqual(login.status, 200)
+            cookie = login.getheader('Set-Cookie').split(';')[0]
+            login.read()
+            original_get = get
+            def get(path, headers=None, method='GET'):
+                return original_get(path, dict({'Cookie':cookie}, **(headers or {})), method)
             status, _, body = get('/api/dashboard?date='+self.date)
             self.assertEqual(status, 200)
             self.assertEqual(json.loads(body)['summary']['detections'], 3)

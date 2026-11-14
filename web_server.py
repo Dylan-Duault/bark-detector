@@ -7,6 +7,7 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 import wave
+from dashboard_auth import Auth, COOKIE, SESSION_SECONDS, load_pin
 
 ROOT = Path(__file__).resolve().parent
 BARK = re.compile(r'^\[BARKING DETECTED\] (\d{4}-\d{2}-\d{2}) (\d{2}):\d{2}:\d{2}')
@@ -64,7 +65,9 @@ def dashboard_data(directory, selected=None, period=7):
     return dict(date=date, summary=summary, trends=trends, days=sorted(days.values(), key=lambda d:d['date'], reverse=True), recordings=[r for r in recordings if r['date']==date])
 
 
-def make_handler(directory):
+def make_handler(directory, pin):
+    auth = Auth(pin)
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.respond(False)
@@ -72,8 +75,61 @@ def make_handler(directory):
         def do_HEAD(self):
             self.respond(True)
 
+        def json_response(self, status, data, headers=None):
+            payload = json.dumps(data).encode()
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(payload)))
+            self.send_header('Cache-Control', 'no-store')
+            for key, value in (headers or {}).items():
+                self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_POST(self):
+            path = urlsplit(self.path).path
+            origin = self.headers.get('Origin')
+            if self.headers.get('Sec-Fetch-Site') == 'cross-site' or (origin and urlsplit(origin).netloc != self.headers.get('Host')):
+                self.json_response(403, {'error': 'Origine refusée.'})
+                return
+            if path == '/api/logout':
+                auth.logout(self.headers.get('Cookie'))
+                self.json_response(200, {'ok': True}, {'Set-Cookie': f'{COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0'})
+                return
+            if path != '/api/login':
+                self.send_error(404)
+                return
+            try:
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 256:
+                    raise ValueError
+                self.connection.settimeout(5)
+                data = json.loads(self.rfile.read(size))
+                pin = data.get('pin') if isinstance(data, dict) else None
+            except (ValueError, OSError):
+                self.json_response(400, {'error': 'Requête invalide.'})
+                return
+            token, delay, blocked = auth.login(self.client_address[0], pin)
+            if not token:
+                self.json_response(429 if blocked else 401,
+                                   {'error': 'Patientez avant de réessayer.' if blocked else 'Code incorrect.', 'retry_after': delay},
+                                   {'Retry-After': str(delay)})
+                return
+            self.json_response(200, {'ok': True}, {'Set-Cookie': f'{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}'})
+
         def respond(self, head):
             parsed = urlsplit(self.path)
+            public = parsed.path in ('/login', '/login.js', '/style.css')
+            if not public and not auth.authenticated(self.headers.get('Cookie')):
+                if parsed.path == '/':
+                    self.send_response(303)
+                    self.send_header('Location', '/login')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+                else:
+                    self.send_error(401, 'Authentication required')
+                return
             if parsed.path == '/api/dashboard':
                 selected = parse_qs(parsed.query).get('date', [None])[0]
                 if selected:
@@ -99,8 +155,8 @@ def make_handler(directory):
                 if not head:
                     self.wfile.write(payload)
                 return
-            if parsed.path in ('/', '/app.js', '/style.css'):
-                name, content_type = {'/':('index.html','text/html; charset=utf-8'), '/app.js':('app.js','text/javascript; charset=utf-8'), '/style.css':('style.css','text/css; charset=utf-8')}[parsed.path]
+            if parsed.path in ('/', '/app.js', '/style.css', '/login', '/login.js'):
+                name, content_type = {'/login':('login.html','text/html; charset=utf-8'), '/login.js':('login.js','text/javascript; charset=utf-8'), '/':('index.html','text/html; charset=utf-8'), '/app.js':('app.js','text/javascript; charset=utf-8'), '/style.css':('style.css','text/css; charset=utf-8')}[parsed.path]
                 path = ROOT / 'web' / name
             elif parsed.path.startswith('/audio/'):
                 name = unquote(parsed.path[len('/audio/'):])
@@ -142,7 +198,7 @@ def make_handler(directory):
                 self.send_header('Content-Type', content_type)
                 self.send_header('Content-Length', str(end-start+1))
                 self.send_header('X-Content-Type-Options', 'nosniff')
-                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Cache-Control', 'no-store')
                 if content_type == 'audio/wav':
                     self.send_header('Accept-Ranges', 'bytes')
                 if status == 206:
@@ -177,7 +233,11 @@ def main():
     args = parser.parse_args()
     if not args.data_dir.is_dir():
         parser.error('--data-dir must be an existing directory')
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(args.data_dir.resolve()))
+    try:
+        pin = load_pin(ROOT / '.env')
+    except ValueError as error:
+        parser.error(str(error))
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(args.data_dir.resolve(), pin))
     print(f'Dashboard: http://localhost:{args.port} — mobile: http://<IP locale de cette machine>:{args.port}', flush=True)
     try:
         server.serve_forever()

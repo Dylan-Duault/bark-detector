@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import pwd
 import subprocess
+from dashboard_auth import load_pin
 
 ROOT = Path(__file__).resolve().parent
 SERVICES = ('bark-detector.service', 'bark-dashboard.service')
@@ -34,6 +35,11 @@ def main():
         parser.error('Choose a non-root account with --user')
     if not (ROOT / '.venv/bin/python').exists():
         parser.error('Create .venv and install requirements.txt first')
+    if not args.output_dir:
+        try:
+            load_pin(ROOT / '.env')
+        except ValueError as error:
+            parser.error(str(error))
     if not args.output_dir and os.geteuid() != 0:
         parser.error('Run with sudo, or use --output-dir to preview the units')
     target = args.output_dir or Path('/etc/systemd/system')

@@ -6,3 +6,9 @@ __pycache__/
 bark_log_2*.txt
 *.h5
 desktop.ini
+
+*.wav.part
+
+.env
+.env.*
+!.env.example

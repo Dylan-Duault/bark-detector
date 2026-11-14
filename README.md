@@ -9,7 +9,7 @@ A Python tool for real-time dog bark detection and logging using the [YAMNet](ht
 - Detects bark events by volume threshold and class confidence
 - Groups individual barks into sessions separated by quiet gaps
 - Logs bark events and sessions to a daily text file
-- Saves the last 60 seconds as a WAV as soon as two consecutive audio chunks contain barking
+- Records after two consecutive positive chunks, including 60 seconds of history, until 10 seconds without detection
 
 ## Scripts
 
@@ -133,7 +133,8 @@ Key constants in `bark_session_logger.py` can be adjusted to suit your environme
 | `SESSION_GAP_SECONDS` | `90` | Quiet gap (seconds) that ends a bark session |
 | `MIN_SESSION_DURATION` | `0` | Minimum session length (seconds) to be logged |
 | `MIN_BARKS_PER_SESSION` | `2` | Minimum bark count for a session to be logged |
-| `RECORD_DURATION` | `60` | Maximum rolling audio history saved on detection (seconds) |
+| `RECORD_DURATION` | `60` | Audio history retained before the trigger (seconds) |
+| `RECORD_QUIET_SECONDS` | `10` | Quiet gap before saving a complete recording (seconds) |
 | `CONSECUTIVE_BARKS` | `2` | Consecutive positive 1.2-second chunks required to save audio |
 
 ## Output files
@@ -153,25 +154,35 @@ Lancer avec `.venv/bin/python bark_session_logger.py` sous Linux. Le premier
 lancement télécharge YAMNet et nécessite Internet. Sous Linux, PortAudio doit
 être installé (paquet `libportaudio2` sous Debian/Ubuntu).
 
-Un WAV contenant jusqu’aux 60 dernières secondes est sauvegardé immédiatement
-après deux blocs consécutifs de 1,2 seconde classés comme aboiements. Les
-aboiements déclencheurs sont inclus. Un bloc sans aboiement réarme le
-déclenchement ; une série continue produit un seul fichier, sans limite horaire.
+Deux blocs consécutifs de 1,2 seconde classés comme chien déclenchent
+l’enregistrement. Celui-ci inclut jusqu’aux 60 secondes précédentes et se poursuit
+jusqu’à 10 secondes sans détection. Chaque nouvelle détection, même isolée,
+repousse cette échéance. Une pause plus courte reste dans le même fichier.
+Le WAV final apparaît dans `recordings/` une fois terminé, sans limite horaire.
+L’audio est écrit progressivement sur disque ; seuls l’historique et les blocs
+en attente restent en mémoire. Un arrêt propre du service sauvegarde aussi
+l’enregistrement en cours. Les fichiers temporaires `.wav.part` sont masqués dans
+l’interface ; une coupure de courant peut laisser un fichier temporaire incomplet.
 Le modèle détecte des blocs contenant un chien, pas chaque aboiement individuel :
 deux aboiements dans un seul bloc peuvent ne pas déclencher la sauvegarde.
 
 ## Tableau de bord web (mobile)
 
-Le détecteur sauvegarde maintenant **la dernière minute** au déclenchement après
-les deux détections consécutives. Si le programme tourne depuis moins d’une
-minute, le fichier contient l’historique disponible. Il n’enregistre pas la
-minute suivante.
+Le détecteur conserve **la dernière minute avant le déclenchement**, puis toute
+la série d’aboiements et les 10 secondes sans détection qui la terminent.
+Si le programme tourne depuis moins d’une minute, seul l’historique disponible
+est inclus. Le nom du fichier indique l’heure du déclenchement. Les anciens
+fichiers restent consultables, avec leur durée et leur contenu d’origine.
 
 Dans un premier terminal, lancer le détecteur :
 
 ```bash
 .venv/bin/python bark_session_logger.py
 ```
+
+Avant le premier lancement, copier `.env.example` vers `.env`, puis définir
+`DASHBOARD_PIN` avec un code de quatre chiffres. Le serveur refuse de démarrer
+sans un code valide. Ne jamais publier `.env`.
 
 Dans un second terminal, lancer la page web (Python standard, sans dépendance web) :
 
@@ -200,8 +211,9 @@ calme. Les anciens fichiers WAV restent consultables avec leur durée d’origin
 
 Le serveur lit les logs et WAV existants à chaque actualisation ; il peut donc
 être utilisé sans lancer le détecteur pour consulter l’historique. Aucun fichier
-n’est envoyé vers un service externe. L’accès est sans mot de passe, prévu pour
-un réseau local de confiance : ne pas ouvrir ce port sur Internet.
+n’est envoyé vers un service externe. L’accès exige le code défini dans `.env`,
+y compris pour les statistiques et les fichiers audio. Le serveur HTTP est prévu
+pour un réseau local de confiance : ne pas ouvrir ce port sur Internet.
 Pour un accès limité à cette machine :
 
 ```bash
@@ -213,7 +225,7 @@ Vérifications : `python3 -m unittest discover -s tests -v`.
 
 ## Démarrage automatique sur Raspberry Pi
 
-Après installation des dépendances dans `.venv`, exécuter depuis le dépôt :
+Après installation des dépendances dans `.venv` et configuration du code dans `.env`, exécuter depuis le dépôt :
 
 ```bash
 sudo .venv/bin/python install_services.py
@@ -261,3 +273,20 @@ jour et heure, et détections horaires cumulées. Toucher une barre ou une case
 sur mobile affiche le détail. Le calendrier se fait défiler horizontalement.
 Les jours sans journal sont hachurés ; la présence d’un journal ne garantit pas
 une journée complète d’écoute. La journée en cours et ses sessions sont partielles.
+
+### Code d’accès à l’interface
+
+Définir `DASHBOARD_PIN` dans `.env` à la racine du dépôt : exactement quatre
+chiffres, y compris les éventuels zéros initiaux. `.env` est ignoré par Git.
+Le code n’est transmis ni dans les URL, ni dans le JavaScript ou les journaux.
+Après modification : `sudo systemctl restart bark-dashboard`.
+
+Chaque échec impose une attente par adresse IP de 2, 4, 8, 16, 32 puis 60 secondes.
+Le serveur refuse aussi un code correct tant que le délai n’est pas écoulé.
+Une connexion réussie remet le compteur à zéro. Les délais et sessions sont
+conservés en mémoire et réinitialisés au redémarrage du serveur.
+
+La session expire après 12 heures ou lors de la déconnexion. Le cookie est
+`HttpOnly` et `SameSite=Strict`. La page, les statistiques et les enregistrements
+exigent une session valide ; l’écran de connexion et son style restent publics.
+Sur le serveur HTTP local, le code et le cookie ne sont pas chiffrés en transit.

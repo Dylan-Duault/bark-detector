@@ -66,6 +66,7 @@ async function refresh() {
   $('status').textContent = 'Actualisation du journal…';
   try {
     const response = await fetch(`/api/dashboard?date=${encodeURIComponent(date)}&period=${period}`,{cache:'no-store'});
+    if (response.status === 401) { window.location.replace('/login'); return; }
     if (!response.ok) throw new Error('HTTP '+response.status);
     const data = await response.json();
     if (current !== request) return;
@@ -101,7 +102,7 @@ async function refresh() {
         const row = element('article',undefined,'recording');
         row.dataset.name = recording.name;
         const label = element('div');
-        label.append(element('strong',recording.time),element('small',`${duration(recording.duration)} avant le déclenchement`));
+        label.append(element('strong',recording.time),element('small',`${duration(recording.duration)} d’audio`));
         const audio = document.createElement('audio');
         audio.controls = true; audio.preload = 'none'; audio.src = recording.url;
         audio.setAttribute('aria-label',`Enregistrement de ${recording.time}`);
@@ -136,3 +137,5 @@ $('date').addEventListener('change',refresh);
 $('refresh').addEventListener('click',refresh);
 refresh();
 setInterval(refresh,30000);
+
+$('logout').addEventListener('click',async()=>{const response=await fetch('/api/logout',{method:'POST'});if(response.ok) window.location.replace('/login');});

@@ -15,7 +15,8 @@ import time
 from collections import deque
 import csv
 from audio_recording import AudioBuffer, BarkRecorder
-from storage import LOGS_DIR, RECORDINGS_DIR, prepare_data_directory
+from storage import DATA_DIR, LOGS_DIR, RECORDINGS_DIR, prepare_data_directory
+from detector_monitor import DetectorMonitor
 
 # Constants
 SAMPLE_RATE = 16000
@@ -82,7 +83,7 @@ def log_session(start, end, count):
         f.write(entry + '\n')
 
 
-def main():
+def run_detector(monitor):
     yamnet_model = load_yamnet()
     class_map = load_class_map()
     prepare_data_directory()
@@ -90,22 +91,24 @@ def main():
     recorder = BarkRecorder(audio_buffer, RECORDINGS_DIR,
                             SAMPLE_RATE, CONSECUTIVE_BARKS, RECORD_QUIET_SECONDS)
 
-    log_header()
-    print("Listening for dog barks in real-time...")
-
     try:
         stream = sd.InputStream(callback=audio_buffer.callback, channels=1, samplerate=SAMPLE_RATE)
         stream.start()
+        monitor.set_state('waiting_audio')
     except Exception as e:
         print(f"[ERROR] Failed to start audio stream: {e}")
-        return
+        monitor.set_state('microphone_unavailable')
+        raise
 
     recent_barks = deque()
     active_session = None
     current_bark_count = 0
 
     try:
+        log_header()
+        print("Listening for dog barks in real-time...")
         while True:
+            monitor.heartbeat()
             now = datetime.datetime.now()
             chunk = audio_buffer.read_chunk()
             if chunk is None:
@@ -114,6 +117,7 @@ def main():
                 continue
 
             scores, _, _ = yamnet_model(chunk)
+            monitor.processed(audio_buffer.last_chunk_end, len(chunk) / SAMPLE_RATE)
             mean_scores = tf.reduce_mean(scores, axis=0).numpy()
             top_classes = [class_map[i] for i in mean_scores.argsort()[-TOP_N_CLASSES:][::-1]]
             bark_volume = np.mean(np.abs(chunk))
@@ -161,6 +165,22 @@ def main():
                 recorder.finish()
             finally:
                 stream.close()
+
+
+def main():
+    monitor = DetectorMonitor(DATA_DIR)
+    try:
+        run_detector(monitor)
+    except KeyboardInterrupt:
+        monitor.set_state('stopped')
+    except Exception:
+        if monitor.state != 'microphone_unavailable':
+            monitor.set_state('error')
+        raise
+    else:
+        monitor.set_state('stopped')
+    finally:
+        monitor.close()
 
 
 if __name__ == '__main__':

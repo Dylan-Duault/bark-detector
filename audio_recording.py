@@ -3,6 +3,7 @@ from collections import deque
 import os
 from pathlib import Path
 from threading import Lock
+import time
 
 import numpy as np
 import soundfile as sf
@@ -18,12 +19,15 @@ class AudioBuffer:
         self.pending = []
         self.capturing = False
         self.lock = Lock()
+        self.last_input_at = None
+        self.last_chunk_end = None
 
     def callback(self, indata, frames, time_info, status):
         if status:
             print(f"[WARNING] InputStream status: {status}")
         mono = indata[:, 0].copy()
         with self.lock:
+            self.last_input_at = time.time()
             self.buffer.extend(mono)
             self.history.append(mono)
             self.history_length += len(mono)
@@ -41,6 +45,7 @@ class AudioBuffer:
         with self.lock:
             if len(self.buffer) < self.chunk_samples:
                 return None
+            self.last_chunk_end = self.last_input_at
             return np.array([self.buffer.popleft() for _ in range(self.chunk_samples)], dtype=np.float32)
 
     def start_capture(self):

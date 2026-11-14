@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import wave
 from dashboard_auth import Auth, COOKIE, SESSION_SECONDS, load_pin
 from storage import DATA_DIR, prepare_data_directory
+from detector_monitor import read_monitoring
 
 ROOT = Path(__file__).resolve().parent
 BARK = re.compile(r'^\[BARKING DETECTED\] (\d{4}-\d{2}-\d{2}) (\d{2}):\d{2}:\d{2}')
@@ -19,6 +20,7 @@ AUDIO = re.compile(r'bark_audio_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.wav')
 def dashboard_data(directory, selected=None, period=7):
     if period not in (7, 30):
         raise ValueError("Period must be 7 or 30 days")
+    detector, coverage = read_monitoring(directory)
     logged_dates = set()
     days = {}
     for path in sorted((directory / 'logs').glob('bark_log_????-??-??.txt')):
@@ -53,17 +55,24 @@ def dashboard_data(directory, selected=None, period=7):
         day = days.setdefault(match[1], dict(date=match[1], detections=0, sessions=0, seconds=0, recordings=0, hours=[0]*24))
         day['recordings'] += 1
         recordings.append(dict(name=path.name, date=match[1], time=timestamp.strftime('%H:%M:%S'), duration=round(duration, 1), url='/audio/'+path.name))
+    for key in coverage:
+        days.setdefault(key, dict(date=key, detections=0, sessions=0, seconds=0, recordings=0, hours=[0]*24))
+    for key, day in days.items():
+        day['listened_hours'] = coverage.get(key)
+        day['listened_seconds'] = sum(coverage[key]) if key in coverage else None
+        day['has_data'] = key in logged_dates or bool(day['listened_seconds'])
     date = selected or dt.date.today().isoformat()
-    summary = days.get(date, dict(date=date, detections=0, sessions=0, seconds=0, recordings=0, hours=[0]*24))
+    summary = days.get(date, dict(date=date, detections=0, sessions=0, seconds=0, recordings=0, hours=[0]*24, listened_hours=None, listened_seconds=None, has_data=False))
     end = dt.date.fromisoformat(date)
     trend_days = []
     for offset in range(period-1, -1, -1):
         key = (end - dt.timedelta(days=offset)).isoformat()
-        item = days.get(key, dict(date=key, detections=0, sessions=0, seconds=0, recordings=0, hours=[0]*24))
+        item = days.get(key, dict(date=key, detections=0, sessions=0, seconds=0, recordings=0, hours=[0]*24, listened_hours=None, listened_seconds=None, has_data=False))
         trend_days.append(dict(item, has_log=key in logged_dates))
     trends = dict(period=period, start=trend_days[0]['date'], end=date, days=trend_days,
-                  hours=[sum(day['hours'][h] for day in trend_days) for h in range(24)])
-    return dict(date=date, summary=summary, trends=trends, days=sorted(days.values(), key=lambda d:d['date'], reverse=True), recordings=[r for r in recordings if r['date']==date])
+                  hours=[sum(day['hours'][h] for day in trend_days) for h in range(24)],
+                  listened_seconds=sum(day['listened_seconds'] or 0 for day in trend_days) if any(day['listened_seconds'] is not None for day in trend_days) else None)
+    return dict(date=date, detector=detector, summary=summary, trends=trends, days=sorted(days.values(), key=lambda d:d['date'], reverse=True), recordings=[r for r in recordings if r['date']==date])
 
 
 def make_handler(directory, pin):

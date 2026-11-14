@@ -122,14 +122,28 @@ La machine doit rester allumée et le microphone branché.
 Choisir une date pour retrouver les **extraits avec aboiements**, les
 **séries d’aboiements** et les fichiers audio. Un extrait est une portion de
 1,2 seconde reconnue comme contenant un chien ; une série regroupe les
-aboiements jusqu’à 1 min 30 de calme. L’aide « Comment lire ces chiffres ? »
-explique ces compteurs directement dans l’interface. La page s’actualise toutes les 30 secondes sans interrompre une écoute.
+aboiements jusqu’à 1 min 30 de calme. Les explications restent courtes, sous
+les compteurs. La page s’actualise toutes les 30 secondes sans interrompre une écoute.
+
+Une ligne discrète près du bouton Actualiser indique l’état actuel du détecteur :
+écoute active, démarrage, micro indisponible, absence de signal ou erreur. Le
+service publie son état environ toutes les 5 secondes ; s’il ne répond plus,
+l’interface cesse d’annoncer une écoute active. L’heure du dernier signal est
+accessible dans l’infobulle de cette ligne.
+
+Le temps d’écoute mesuré est indiqué à côté du titre de la journée et dans
+l’historique, ainsi que dans les détails du graphique quotidien. Il correspond
+aux extraits réellement analysés, sans compter le chargement du modèle, les
+interruptions ni les échantillons non traités. La mesure commence à l’activation
+de cette fonctionnalité ; les anciennes durées restent inconnues, sans estimation.
+Les heures sans donnée sont hachurées dans le calendrier, tandis qu’une heure
+écoutée sans aboiement reste affichée avec une activité nulle.
 
 Les graphiques sont **en bas de page** :
 
 | Graphique | À quoi il sert |
 | --- | --- |
-| Évolution quotidienne | Comparer le durée des séries d’aboiements déjà finies d’un jour à l’autre |
+| Évolution quotidienne | Comparer la durée des séries d’aboiements déjà finies d’un jour à l’autre |
 | Calendrier de chaleur | Repérer les heures et les jours où les détections se répètent |
 | Activité horaire cumulée | Identifier les heures les plus animées sur la période |
 
@@ -244,6 +258,7 @@ Aucun seuil minimal de confiance YAMNet n’est imposé en plus du classement.
 | `web_server.py` | Serveur HTTP, statistiques et lecture audio |
 | `dashboard_auth.py` | Code d’accès, sessions et délais |
 | `storage.py` | Emplacement commun des journaux et enregistrements |
+| `detector_monitor.py` | État du détecteur et durée d’écoute mesurée |
 | `web/` | Interface mobile, connexion et graphiques |
 | `install_services.py`, `systemd/` | Installation et démarrage automatique |
 | `yamnet_class_map.csv` | Les 521 catégories du modèle |
@@ -256,7 +271,8 @@ entièrement exclu de Git :
 ```text
 data/
 ├── logs/         # Historique des extraits et séries, un journal par jour
-└── recordings/   # Fichiers audio WAV
+├── recordings/   # Fichiers audio WAV
+└── monitoring.sqlite3  # État du détecteur et durées d’écoute par jour et heure
 ```
 
 Sauvegarder ce dossier pour conserver l’historique en cas de panne de la carte.
@@ -266,7 +282,11 @@ Le code d’accès reste dans `.env`, séparé de l’historique et lui aussi ex
 - `data/logs/bark_log_YYYY-MM-DD.txt` : extraits reconnus et séries ;
 - `data/recordings/bark_audio_YYYY-MM-DD_HH-MM-SS.wav` : audio terminé, nommé à l’heure
   du déclenchement ;
-- `data/recordings/*.wav.part` : enregistrement temporaire, absent de l’interface.
+- `data/recordings/*.wav.part` : enregistrement temporaire, absent de l’interface ;
+- `data/monitoring.sqlite3` : état du détecteur et durées d’écoute, conservés après redémarrage.
+
+Le suivi est enregistré environ toutes les 5 secondes, et lors d’un arrêt propre.
+Une coupure brutale peut perdre les dernières secondes de mesure.
 
 ## Vérifications
 

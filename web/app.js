@@ -21,18 +21,36 @@ function element(tag, text, className) {
   return node;
 }
 
+function renderDetector(detector) {
+  const labels = {
+    starting:'Démarrage du détecteur…',
+    waiting_audio:'En attente du microphone…',
+    listening:'Microphone à l’écoute',
+    microphone_unavailable:'Microphone indisponible',
+    no_audio:'Aucun signal du microphone',
+    stopped:'Détecteur arrêté',
+    error:'Détecteur en erreur',
+    unresponsive:'Le détecteur ne répond plus',
+    unknown:'État du détecteur inconnu'
+  };
+  const node=$('detector-status');
+  node.textContent=`En direct · ${labels[detector.state] || labels.unknown}`;
+  node.dataset.state=detector.state;
+  node.title=detector.last_audio_at ? `Dernier signal du microphone reçu le ${new Date(detector.last_audio_at*1000).toLocaleString('fr-FR')}` : 'Aucun signal du microphone reçu depuis le début du suivi.';
+}
+
 function renderTrends(trends) {
-  const logged = trends.days.filter(day=>day.has_log).length;
-  $('period-caption').textContent = `Du ${formatDate(trends.start)} au ${formatDate(trends.end)} · ${logged} jour${logged === 1 ? '' : 's'} avec des données sur ${trends.period}. Chaque journée peut n’avoir été enregistrée qu’en partie.`;
+  const coverage = trends.listened_seconds === null ? 'durée d’écoute non mesurée' : `${duration(trends.listened_seconds)} d’écoute mesurée`;
+  $('period-caption').textContent = `Du ${formatDate(trends.start)} au ${formatDate(trends.end)} · ${coverage}.`;
   const maxSeconds = Math.max(1,...trends.days.map(day=>day.seconds));
   $('daily-scale').textContent = `Échelle : 0 → ${duration(maxSeconds)}`;
   $('daily-chart').style.setProperty('--days',trends.period);
   $('daily-chart').replaceChildren(...trends.days.map(day=>{
     const column = element('div',undefined,'daily-column');
-    const button = element('button',undefined,`daily-bar${day.has_log?'':' no-data'}`);
+    const button = element('button',undefined,`daily-bar${day.has_data?'':' no-data'}`);
     button.type='button';
     button.style.setProperty('--height',`${Math.max(2,day.seconds/maxSeconds*100)}%`);
-    const detail = `${formatDate(day.date)} : ${day.has_log?`${duration(day.seconds)} de séries d’aboiements, pauses comprises · ${extracts(day.detections)}`:'aucune donnée pour ce jour'}`;
+    const detail = `${formatDate(day.date)} : ${day.has_data?`${duration(day.seconds)} de séries d’aboiements, pauses comprises · ${extracts(day.detections)}`:'aucune donnée pour ce jour'} · ${day.listened_seconds === null ? 'écoute non mesurée' : `${duration(day.listened_seconds)} d’écoute mesurée`}`;
     button.setAttribute('aria-label',detail); button.title=detail;
     button.addEventListener('click',()=>{ $('daily-detail').textContent=detail; });
     const track = element('div',undefined,'daily-track'); track.append(button);
@@ -47,8 +65,9 @@ function renderTrends(trends) {
     cells.push(element('span',new Date(`${day.date}T12:00:00`).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}),'heat-label'));
     day.hours.forEach((count,hour)=>{
       const level = count ? Math.max(1,Math.ceil(count/Math.max(1,maxCount)*4)) : 0;
-      const cell = element('button',undefined,day.has_log?`heat-cell level-${level}`:'heat-cell no-data');
-      const detail = `${formatDate(day.date)}, ${hour} h–${hour+1} h : ${day.has_log?extracts(count):'aucune donnée pour ce jour'}`;
+      const observed = count > 0 || (day.listened_hours?.[hour] || 0) > 0;
+      const cell = element('button',undefined,observed?`heat-cell level-${level}`:'heat-cell no-data');
+      const detail = `${formatDate(day.date)}, ${hour} h–${hour+1} h : ${observed?extracts(count):'aucune donnée pour cette heure'}`;
       cell.type='button'; cell.title=detail; cell.setAttribute('aria-label',detail);
       cell.addEventListener('click',()=>{ $('heat-detail').textContent=detail; });
       cells.push(cell);
@@ -73,15 +92,20 @@ async function refresh() {
   const date = $('date').value;
   if (!date) return;
   $('status').textContent = 'Actualisation des données…';
+  const controller = new AbortController();
+  const timeout = setTimeout(()=>controller.abort(), 10000);
   try {
-    const response = await fetch(`/api/dashboard?date=${encodeURIComponent(date)}&period=${period}`,{cache:'no-store'});
+    const response = await fetch(`/api/dashboard?date=${encodeURIComponent(date)}&period=${period}`,{cache:'no-store', signal:controller.signal});
     if (response.status === 401) { window.location.replace('/login?expired=1'); return; }
     if (!response.ok) throw new Error('HTTP '+response.status);
     const data = await response.json();
     if (current !== request) return;
+    renderDetector(data.detector);
     renderTrends(data.trends);
     const s = data.summary;
-    const hasStats = data.trends.days.at(-1).has_log;
+    const hasStats = data.summary.has_data;
+    $('listening-summary').textContent = s.listened_seconds === null ? '· Écoute non mesurée' : `· ${duration(s.listened_seconds)} d’écoute mesurée`;
+    $('listening-summary').title = data.detector.tracking_since ? `Durée mesurée depuis le ${new Date(data.detector.tracking_since*1000).toLocaleString('fr-FR')}. Les anciennes périodes ne sont pas estimées.` : 'La durée d’écoute n’était pas mesurée pour cette journée.';
     $('detections').textContent = hasStats ? s.detections : '—';
     $('sessions').textContent = hasStats ? s.sessions : '—';
     $('duration').textContent = hasStats ? duration(s.seconds) : '—';
@@ -128,14 +152,21 @@ async function refresh() {
     $('history').replaceChildren(...data.days.map(day=>{
       const button = element('button',undefined,'day');
       button.type='button'; button.setAttribute('aria-pressed',String(day.date===date));
-      button.append(element('span',formatDate(day.date)),element('small',`${extracts(day.detections)} · ${files(day.recordings)}`));
+      button.append(element('span',formatDate(day.date)),element('small',`${day.detections} extraits · ${day.recordings} audio${day.listened_seconds === null ? '' : ` · ${duration(day.listened_seconds)} d’écoute`}`));
       button.addEventListener('click',()=>{ $('date').value=day.date; refresh(); });
       return button;
     }));
     if (!data.days.length) $('history').append(element('p','Aucune journée enregistrée pour le moment. Les journées apparaîtront lorsque le détecteur aura créé des données.','muted'));
     $('status').textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
   } catch (error) {
-    if (current === request) $('status').textContent = 'Impossible de charger les données. Vérifiez votre connexion au réseau du Pi, puis appuyez sur Actualiser.';
+    if (current === request) {
+      $('detector-status').dataset.state='unknown';
+      $('detector-status').textContent='État du détecteur indisponible';
+      $('detector-status').removeAttribute('title');
+      $('status').textContent = 'Impossible de charger les données. Vérifiez votre connexion au réseau du Pi, puis appuyez sur Actualiser.';
+    }
+  } finally {
+    clearTimeout(timeout);
   }
 }
 document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{

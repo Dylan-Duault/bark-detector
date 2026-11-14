@@ -15,20 +15,14 @@
   <div><p class="eyebrow">LE JOURNAL DES ABOIEMENTS</p><h1>Les aboiements de la journée</h1><p>Retrouvez les moments où votre chien a donné de la voix et écoutez les enregistrements.</p></div>
   <label class="date-label" for="date">Choisir une journée<input type="date" id="date"></label>
 </section>
-<div class="toolbar"><p id="status" role="status" aria-live="polite">Chargement des données…</p><button id="refresh" type="button">Actualiser ↻</button></div>
-<p class="eyebrow daily-heading">LA JOURNÉE CHOISIE EN CHIFFRES</p>
+<div class="toolbar"><div class="health-stack"><p id="detector-status" class="detector-health" data-state="unknown" role="status" aria-live="polite">Vérification de l’écoute…</p><p id="status" role="status" aria-live="polite">Chargement des données…</p></div><button id="refresh" type="button">Actualiser ↻</button></div>
+<p class="eyebrow daily-heading">LA JOURNÉE CHOISIE EN CHIFFRES <span id="listening-summary" class="listening-summary"></span></p>
 <section class="metrics" aria-label="Chiffres de la journée choisie">
   <article><span>Extraits avec aboiements</span><strong id="detections">—</strong><small>extraits de 1,2 s, pas un nombre d’aboiements</small></article>
   <article><span>Séries d’aboiements</span><strong id="sessions">—</strong><small>comptées après 1 min 30 de calme</small></article>
   <article><span>Durée des séries</span><strong id="duration">—</strong><small>séries finies, pauses comprises</small></article>
   <article><span>Enregistrements audio</span><strong id="count">—</strong><small>fichiers disponibles à l’écoute</small></article>
 </section>
-<details class="metric-help">
-  <summary>Comment lire ces chiffres ?</summary>
-  <p><strong>Un extrait</strong> correspond à 1,2 seconde de son reconnue comme contenant un chien. Plusieurs aboiements peuvent tenir dans un seul extrait ; le modèle peut aussi reconnaître des hurlements ou des gémissements.</p>
-  <p><strong>Une série</strong> regroupe les aboiements jusqu’à une pause d’au moins 1 min 30. Elle est ajoutée au compteur après cette pause si elle contient au moins deux extraits reconnus. Sa durée va du début à la fin de la série, pauses entre aboiements comprises.</p>
-  <p><strong>Un enregistrement</strong> est un fichier à écouter. Il s’arrête après 10 secondes sans son de chien reconnu. Une même série peut donc donner plusieurs fichiers. Le compteur d’extraits peut aussi augmenter sans nouvel enregistrement.</p>
-</details>
 <section class="panel activity">
   <div class="section-title"><div><p class="eyebrow">ACTIVITÉ DE LA JOURNÉE CHOISIE</p><h2>Les heures avec aboiements</h2></div><span>Extraits par heure</span></div>
   <div id="chart" class="chart" role="img" aria-label="Extraits avec aboiements par heure"></div>
@@ -57,7 +51,7 @@
   <p class="muted">Plus la case est foncée, plus il y a d’extraits avec aboiements. Touchez une case pour voir le nombre. Faites glisser le tableau pour parcourir les heures.</p>
   <div class="heat-scroll" tabindex="0" aria-label="Extraits avec aboiements par jour et par heure, tableau à faire défiler horizontalement"><div id="heatmap" class="heatmap"></div></div>
   <div class="heat-legend"><span>0</span><i class="level-0"></i><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><i class="level-4"></i><span id="heat-max"></span><i class="no-data"></i><span>Aucune donnée</span></div>
-  <p id="heat-detail" class="chart-detail" aria-live="polite">Une ligne par jour, une colonne par heure. Les cases hachurées indiquent les jours sans données.</p>
+  <p id="heat-detail" class="chart-detail" aria-live="polite">Une ligne par jour, une colonne par heure. Les cases hachurées indiquent les heures sans données.</p>
   <h3>Les heures avec le plus d’activité</h3>
   <p class="muted">Total des extraits avec aboiements à chaque heure, sur toute la période choisie.</p>
   <div id="period-hours" class="chart" aria-label="Total des extraits avec aboiements par heure sur la période choisie"></div>

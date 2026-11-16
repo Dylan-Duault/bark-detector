@@ -1,4 +1,8 @@
 """Local, read-only dashboard for bark logs and recordings (no extra dependencies)."""
+from array import array
+from functools import lru_cache
+import math
+import sys
 import argparse
 import datetime as dt
 import json
@@ -15,6 +19,30 @@ ROOT = Path(__file__).resolve().parent
 BARK = re.compile(r'^\[BARKING DETECTED\] (\d{4}-\d{2}-\d{2}) (\d{2}):\d{2}:\d{2}')
 SESSION = re.compile(r'^\[BARK SESSION\].*\(Duration: ([\d.]+) seconds, (\d+) barks\)')
 AUDIO = re.compile(r'bark_audio_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.wav')
+
+
+@lru_cache(maxsize=64)
+def recording_levels(path, modified, size):
+    """Read PCM16 recordings in bounded blocks; cache only the compact envelope."""
+    with wave.open(str(path)) as audio:
+        if audio.getsampwidth() != 2 or audio.getcomptype() != 'NONE':
+            raise ValueError('Unsupported audio format')
+        frames, rate = audio.getnframes(), audio.getframerate()
+        step = max(1, math.ceil(frames / 600))
+        levels = []
+        for start in range(0, frames, step):
+            remaining = min(step, frames - start)
+            peak = 0
+            while remaining:
+                count = min(8192, remaining)
+                samples = array('h', audio.readframes(count))
+                if sys.byteorder != 'little':
+                    samples.byteswap()
+                peak = max(peak, max((abs(sample) for sample in samples), default=0))
+                remaining -= count
+            levels.append(round(max(-60, 20 * math.log10(peak / 32768)), 1) if peak else -60)
+        return dict(duration=frames / rate, step=step / rate, levels=levels,
+                    peak_dbfs=max(levels, default=-60))
 
 
 def dashboard_data(directory, selected=None, period=7):
@@ -139,6 +167,25 @@ def make_handler(directory, pin):
                     self.end_headers()
                 else:
                     self.send_error(401, 'Authentication required')
+                return
+            if parsed.path.startswith('/api/waveform/'):
+                name = unquote(parsed.path[len('/api/waveform/'):])
+                path = directory / 'recordings' / name
+                if not AUDIO.fullmatch(name) or path.is_symlink():
+                    self.send_error(404)
+                    return
+                try:
+                    stat = path.stat()
+                    data = recording_levels(path, stat.st_mtime_ns, stat.st_size)
+                except (OSError, EOFError, wave.Error, ValueError):
+                    self.send_error(404)
+                    return
+                if head:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json; charset=utf-8')
+                    self.end_headers()
+                else:
+                    self.json_response(200, data)
                 return
             if parsed.path == '/api/dashboard':
                 selected = parse_qs(parsed.query).get('date', [None])[0]

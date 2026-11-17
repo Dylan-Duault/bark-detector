@@ -17,6 +17,7 @@ import csv
 from audio_recording import AudioBuffer, BarkRecorder
 from storage import DATA_DIR, LOGS_DIR, RECORDINGS_DIR, prepare_data_directory
 from detector_monitor import DetectorMonitor
+from bark_music import BarkMusic, load_music_config, ROOT
 
 # Constants
 SAMPLE_RATE = 16000
@@ -84,6 +85,7 @@ def log_session(start, end, count):
 
 
 def run_detector(monitor):
+    music = BarkMusic(**load_music_config(ROOT / '.env'))
     yamnet_model = load_yamnet()
     class_map = load_class_map()
     prepare_data_directory()
@@ -127,6 +129,7 @@ def run_detector(monitor):
 
             if is_bark:
                 log_bark(now, bark_volume)
+                music.detected()
                 recent_barks.append(now)
                 current_bark_count += 1
 
@@ -158,6 +161,7 @@ def run_detector(monitor):
             else:
                 print(f"[SKIPPED SESSION] From {active_session} to {now} - below threshold")
     finally:
+        music.close()
         try:
             stream.stop()
         finally:

@@ -8,6 +8,7 @@ import datetime as dt
 import json
 from pathlib import Path
 import re
+import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 import wave
@@ -69,6 +70,25 @@ def dashboard_data(directory, selected=None, period=7):
                 elif session:
                     day['sessions'] += 1
                     day['seconds'] += float(session[1])
+    music_events = []
+    for path in sorted((directory / 'logs').glob('music_????-??-??.jsonl')):
+        event_date = path.stem.removeprefix('music_')
+        try:
+            dt.date.fromisoformat(event_date)
+        except ValueError:
+            continue
+        with path.open(encoding='utf-8', errors='replace') as log:
+            for line in log:
+                try:
+                    event = json.loads(line)
+                    if (not isinstance(event, dict) or event.get('status') not in ('started', 'failed')
+                            or not all(isinstance(event.get(key), str) for key in ('time', 'track', 'detail'))):
+                        continue
+                except (ValueError, TypeError):
+                    continue
+                music_events.append(dict(event, date=event_date))
+                logged_dates.add(event_date)
+                days.setdefault(event_date, dict(date=event_date, detections=0, sessions=0, seconds=0, recordings=0, hours=[0]*24))
     recordings = []
     for path in sorted((directory / 'recordings').glob('bark_audio_*.wav'), reverse=True):
         match = AUDIO.fullmatch(path.name)
@@ -100,7 +120,31 @@ def dashboard_data(directory, selected=None, period=7):
     trends = dict(period=period, start=trend_days[0]['date'], end=date, days=trend_days,
                   hours=[sum(day['hours'][h] for day in trend_days) for h in range(24)],
                   listened_seconds=sum(day['listened_seconds'] or 0 for day in trend_days) if any(day['listened_seconds'] is not None for day in trend_days) else None)
-    return dict(date=date, detector=detector, summary=summary, trends=trends, days=sorted(days.values(), key=lambda d:d['date'], reverse=True), recordings=[r for r in recordings if r['date']==date])
+    return dict(music_events=[e for e in reversed(music_events) if e['date'] == date], date=date, detector=detector, summary=summary, trends=trends, days=sorted(days.values(), key=lambda d:d['date'], reverse=True), recordings=[r for r in recordings if r['date']==date])
+
+
+def live_logs(source, run=subprocess.run):
+    units = {'detector': 'bark-detector.service', 'dashboard': 'bark-dashboard.service'}
+    if source not in units:
+        raise ValueError('Source de logs inconnue')
+    result = run(['journalctl', '--quiet', '--no-pager', '--output=json',
+                  '--lines=200', '--unit=' + units[source]],
+                 capture_output=True, text=True, timeout=5)
+    if result.returncode:
+        raise OSError('Lecture du journal indisponible.')
+    entries = []
+    for line in result.stdout.splitlines():
+        try:
+            item = json.loads(line)
+            message = item.get('MESSAGE')
+            if not isinstance(message, str):
+                continue
+            entries.append(dict(id=item['__CURSOR'],
+                timestamp=int(item['__REALTIME_TIMESTAMP']) / 1000000,
+                message=message[:16000], priority=str(item.get('PRIORITY', '6'))))
+        except (ValueError, KeyError, TypeError):
+            continue
+    return dict(entries=entries, source=source)
 
 
 def make_handler(directory, pin):
@@ -159,7 +203,7 @@ def make_handler(directory, pin):
             parsed = urlsplit(self.path)
             public = parsed.path in ('/login', '/login.js', '/style.css')
             if not public and not auth.authenticated(self.headers.get('Cookie')):
-                if parsed.path == '/':
+                if parsed.path in ('/', '/logs'):
                     self.send_response(303)
                     self.send_header('Location', '/login')
                     self.send_header('Cache-Control', 'no-store')
@@ -167,6 +211,22 @@ def make_handler(directory, pin):
                     self.end_headers()
                 else:
                     self.send_error(401, 'Authentication required')
+                return
+            if parsed.path == '/api/logs':
+                source = parse_qs(parsed.query).get('source', ['detector'])[0]
+                try:
+                    data = live_logs(source)
+                except ValueError:
+                    self.send_error(400, 'Unknown log source')
+                    return
+                except (OSError, subprocess.SubprocessError):
+                    self.json_response(503, {'error': 'Lecture du journal indisponible.'})
+                    return
+                if head:
+                    self.send_response(200)
+                    self.end_headers()
+                else:
+                    self.json_response(200, data)
                 return
             if parsed.path.startswith('/api/waveform/'):
                 name = unquote(parsed.path[len('/api/waveform/'):])
@@ -212,8 +272,8 @@ def make_handler(directory, pin):
                 if not head:
                     self.wfile.write(payload)
                 return
-            if parsed.path in ('/', '/app.js', '/style.css', '/login', '/login.js'):
-                name, content_type = {'/login':('login.html','text/html; charset=utf-8'), '/login.js':('login.js','text/javascript; charset=utf-8'), '/':('index.html','text/html; charset=utf-8'), '/app.js':('app.js','text/javascript; charset=utf-8'), '/style.css':('style.css','text/css; charset=utf-8')}[parsed.path]
+            if parsed.path in ('/', '/app.js', '/style.css', '/login', '/login.js', '/logs', '/logs.js'):
+                name, content_type = {'/logs':('logs.html','text/html; charset=utf-8'), '/logs.js':('logs.js','text/javascript; charset=utf-8'), '/login':('login.html','text/html; charset=utf-8'), '/login.js':('login.js','text/javascript; charset=utf-8'), '/':('index.html','text/html; charset=utf-8'), '/app.js':('app.js','text/javascript; charset=utf-8'), '/style.css':('style.css','text/css; charset=utf-8')}[parsed.path]
                 path = ROOT / 'web' / name
             elif parsed.path.startswith('/audio/'):
                 name = unquote(parsed.path[len('/audio/'):])

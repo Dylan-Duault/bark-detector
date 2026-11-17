@@ -180,6 +180,59 @@ sudo systemctl restart bark-dashboard
 
 ## Gérer le Pi
 
+### Musique automatique
+
+Dans `.env`, définir `BARK_MUSIC_ENABLED=true` pour jouer le morceau après
+**20 détections en moins de 5 minutes**, ou `false` pour désactiver cette option
+(désactivée par défaut). Redémarrer `bark-detector` après chaque changement.
+Le seuil et la période sont également configurables dans `.env` :
+
+```dotenv
+BARK_MUSIC_ENABLED=true
+BARK_MUSIC_BARK_COUNT=20
+BARK_MUSIC_WINDOW_SECONDS=300
+BARK_MUSIC_VOLUME_PERCENT=35
+```
+
+`BARK_MUSIC_BARK_COUNT` est le nombre de détections et
+`BARK_MUSIC_WINDOW_SECONDS` la période en secondes (300 = 5 minutes).
+Ces deux valeurs doivent être des entiers strictement positifs ; sans réglage,
+elles valent respectivement 20 et 300.
+
+Il s'agit de blocs audio positifs de 1,2 seconde, pas du nombre exact de « ouaf ».
+
+À chaque déclenchement, le MP3 suivant de `data/music/` est lu, dans l'ordre
+alphabétique des fichiers, puis la liste reprend au début. La position est
+conservée dans `data/music/.last-track`, y compris après redémarrage.
+Ajouter un MP3 dans ce dossier suffit pour l'inclure dans la rotation.
+Les quatre morceaux installés sont Amberlight, Precious Memories, Spring Flowers
+et Wintry.
+
+Chaque morceau est lu une fois en entier, sans bloquer la détection ni superposer
+les lectures. Les détections pendant la lecture ne comptent pas pour le prochain
+déclenchement ; le comptage repart à zéro après la musique et au redémarrage.
+Une erreur de lecture est journalisée sans arrêter la détection.
+
+La lecture utilise `ffplay` (`sudo apt-get install ffmpeg`) et la sortie par
+défaut de la session audio de l'utilisateur du service (PipeWire/PulseAudio).
+Pour écouter sur l'Acton III, la connecter et la choisir comme sortie par défaut.
+Avant chaque lecture, `BARK_MUSIC_VOLUME_PERCENT` (entier de 0 à 100,
+35 par défaut) est appliqué à la sortie du système, qui est aussi démutée.
+Le volume est relu après synchronisation Bluetooth, avec jusqu'à trois tentatives.
+Si le réglage échoue ou ne correspond pas, la lecture est annulée et une erreur
+apparaît dans les logs. Cette vérification ne bloque pas l'analyse du microphone.
+
+Les fichiers locaux sont exclus de Git avec `data/`. Le morceau d'origine est
+`data/music/precious-memories.mp3`. Pour le télécharger sur une autre installation :
+
+```bash
+mkdir -p data/music
+curl --fail --location --user-agent 'Mozilla/5.0' --referer 'https://www.chosic.com/' \
+  'https://www.chosic.com/wp-content/uploads/2021/02/precious-memories(chosic.com).mp3' \
+  --output data/music/precious-memories.mp3
+sudo systemctl restart bark-detector
+```
+
 ```bash
 # Vérifier les services
 systemctl status bark-detector bark-dashboard
@@ -303,3 +356,17 @@ et l’authentification utilisent uniquement Python standard.
 Ce projet est un fork de [SteveJ71/bark-detector](https://github.com/SteveJ71/bark-detector),
 adapté à un usage quotidien sur Raspberry Pi avec une interface web mobile.
 Il est distribué sous [licence MIT](LICENSE).
+
+Le redémarrage de `bark-detector` redémarre également `bark-dashboard` pour charger
+les changements de l’API. Son arrêt arrête aussi le dashboard ; celui-ci peut toujours
+être démarré ou redémarré séparément.
+Avant chaque musique, le lecteur vérifie la connexion Bluetooth à l’Acton III,
+tente de la reconnecter, attend sa sortie PipeWire et la sélectionne par défaut.
+Si l’enceinte est indisponible, la lecture est annulée et la cause apparaît dans
+« Musiques déclenchées ». Ces opérations se font dans le processus de lecture,
+sans bloquer la détection. L’enceinte doit être allumée et déjà appairée.
+
+La page `/logs`, accessible depuis le dashboard et protégée par le même accès,
+affiche les 200 dernières lignes du détecteur (musique comprise) ou du dashboard.
+Elle s’actualise toutes les deux secondes, avec pause et suivi automatique.
+Le service dashboard utilise le groupe `systemd-journal` pour lire ces journaux.

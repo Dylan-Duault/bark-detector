@@ -6,9 +6,10 @@ import tempfile
 import threading
 import unittest
 import wave
+from unittest.mock import Mock
 from http.server import ThreadingHTTPServer
 
-from web_server import dashboard_data, make_handler
+from web_server import dashboard_data, make_handler, recording_levels, live_logs
 
 
 class DashboardTests(unittest.TestCase):
@@ -35,6 +36,13 @@ class DashboardTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_music_events_are_filtered_by_date_and_ignore_partial_lines(self):
+        (self.directory / 'logs' / f'music_{self.date}.jsonl').write_text(
+            json.dumps(dict(time='12:00:00', track='calm.mp3', status='started', detail='')) + '\n{partial')
+        data = dashboard_data(self.directory, self.date)
+        self.assertEqual(data['music_events'][0]['track'], 'calm.mp3')
+        self.assertEqual(dashboard_data(self.directory, '2020-01-01')['music_events'], [])
+
     def test_stats_and_recording_metadata(self):
         data = dashboard_data(self.directory, self.date)
         self.assertEqual(data['summary']['detections'], 3)
@@ -44,6 +52,34 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(data['summary']['recordings'], 1)
         self.assertEqual(data['recordings'][0]['duration'], 60)
         self.assertEqual(dashboard_data(self.directory, '2026-11-13')['recordings'], [])
+
+    def test_waveform_preserves_peak_position_and_dbfs(self):
+        path = self.directory / 'recordings' / self.name
+        with wave.open(str(path), 'wb') as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(16000)
+            # Silence, a half-scale impulse at 1 s, then silence.
+            import struct
+            audio.writeframes(b'\0\0' * 16000 + struct.pack('<h', 16384) + b'\0\0' * 15999)
+        stat = path.stat()
+        data = recording_levels(path, stat.st_mtime_ns, stat.st_size)
+        self.assertEqual(data['duration'], 2)
+        self.assertLessEqual(len(data['levels']), 600)
+        self.assertAlmostEqual(data['peak_dbfs'], -6.0, places=1)
+        index = data['levels'].index(data['peak_dbfs'])
+        self.assertLessEqual(abs(index * data['step'] - 1), data['step'])
+        self.assertEqual(data['levels'][0], -60)
+        # The cache key changes when an existing file is replaced.
+        with wave.open(str(path), 'wb') as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(16000)
+            audio.writeframes(b'\0\0' * 16000)
+        stat = path.stat()
+        silent = recording_levels(path, stat.st_mtime_ns, stat.st_size)
+        self.assertEqual(silent['peak_dbfs'], -60)
+        self.assertEqual(silent['duration'], 1)
 
     def test_trends_fill_calendar_and_aggregate_hours(self):
         (self.directory / 'logs' / 'bark_log_2026-11-13.txt').write_text(
@@ -87,7 +123,7 @@ class DashboardTests(unittest.TestCase):
         try:
             self.assertEqual(call('GET', '/')[0], 303)
             for method in ('GET', 'HEAD'):
-                for path in ('/api/dashboard', '/audio/'+self.name, '/app.js'):
+                for path in ('/api/dashboard', '/audio/'+self.name, '/api/waveform/'+self.name, '/app.js'):
                     self.assertEqual(call(method, path)[0], 401)
             self.assertEqual(call('GET', '/login')[0], 200)
             self.assertEqual(call('GET', '/login.js')[0], 200)
@@ -135,6 +171,11 @@ class DashboardTests(unittest.TestCase):
             status, _, body = get('/api/dashboard?date='+self.date)
             self.assertEqual(status, 200)
             self.assertEqual(json.loads(body)['summary']['detections'], 3)
+            status, _, envelope = get('/api/waveform/'+self.name)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(envelope)['peak_dbfs'], -60)
+            self.assertEqual(get('/api/waveform/../README.md')[0], 404)
+            self.assertEqual(get('/api/waveform/'+self.name, method='HEAD')[2], b'')
             status, headers, body = get('/audio/'+self.name, {'Range':'bytes=44-75'})
             self.assertEqual(status, 206)
             self.assertEqual(len(body), 32)
@@ -159,3 +200,20 @@ class DashboardTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LiveLogTests(unittest.TestCase):
+    def test_logs_preserve_messages_and_ignore_malformed_entries(self):
+        run = Mock(return_value=Mock(returncode=0, stdout=json.dumps({
+            '__CURSOR': 'cursor', '__REALTIME_TIMESTAMP': '1000000',
+            'MESSAGE': '<script>test</script>', 'PRIORITY': '3'}) + '\ninvalid'))
+        result = live_logs('detector', run)
+        self.assertEqual(result['entries'][0]['timestamp'], 1)
+        self.assertEqual(result['entries'][0]['message'], '<script>test</script>')
+        self.assertIn('--unit=bark-detector.service', run.call_args.args[0])
+
+    def test_arbitrary_units_are_rejected(self):
+        run = Mock()
+        with self.assertRaises(ValueError):
+            live_logs('ssh.service', run)
+        run.assert_not_called()

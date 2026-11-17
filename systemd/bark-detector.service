@@ -1,6 +1,6 @@
 [Unit]
 Description=Dog bark detection and audio recording
-Wants=network-online.target
+Wants=network-online.target bark-dashboard.service
 After=network-online.target sound.target
 StartLimitIntervalSec=0
 

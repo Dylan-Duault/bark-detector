@@ -1,0 +1,67 @@
+<section class="panel trends">
+  <div class="section-title">
+<div>
+<p class="eyebrow">ÉVOLUTION DANS LE TEMPS</p>
+<h2>Sur plusieurs jours</h2>
+</div>
+<div class="period" role="group" aria-label="Nombre de jours affichés, jusqu’à la date choisie">
+<button type="button" data-period="7" aria-pressed="true">7 jours</button>
+<button type="button" data-period="30" aria-pressed="false">30 jours</button>
+</div>
+</div>
+  <p id="period-caption" class="muted">
+</p>
+  <div class="section-title">
+<h3>Durée des séries par jour</h3>
+<span id="daily-scale">
+</span>
+</div>
+  <div id="daily-chart" class="daily-chart" aria-label="Durée des séries d’aboiements par jour">
+</div>
+  <p id="daily-detail" class="chart-detail" aria-live="polite">Touchez une barre pour voir la durée du jour.</p>
+  <p class="muted">Seules les séries déjà finies sont comptées, avec leurs pauses. La journée en cours peut encore évoluer.</p>
+</section>
+<section class="panel">
+  <div class="section-title">
+<div>
+<p class="eyebrow">LES HABITUDES SUR LA PÉRIODE CHOISIE</p>
+<h2>Les aboiements par jour et par heure</h2>
+</div>
+</div>
+  <p class="muted">Plus la case est foncée, plus il y a d’extraits avec aboiements. Touchez une case pour voir le nombre. Faites glisser le tableau pour parcourir les heures.</p>
+  <div class="heat-scroll" tabindex="0" aria-label="Extraits avec aboiements par jour et par heure, tableau à faire défiler horizontalement">
+<div id="heatmap" class="heatmap">
+</div>
+</div>
+  <div class="heat-legend">
+<span>0</span>
+<i class="level-0">
+</i>
+<i class="level-1">
+</i>
+<i class="level-2">
+</i>
+<i class="level-3">
+</i>
+<i class="level-4">
+</i>
+<span id="heat-max">
+</span>
+<i class="no-data">
+</i>
+<span>Aucune donnée</span>
+</div>
+  <p id="heat-detail" class="chart-detail" aria-live="polite">Une ligne par jour, une colonne par heure. Les cases hachurées indiquent les heures sans données.</p>
+  <h3>Les heures avec le plus d’activité</h3>
+  <p class="muted">Total des extraits avec aboiements à chaque heure, sur toute la période choisie.</p>
+  <div id="period-hours" class="chart" aria-label="Total des extraits avec aboiements par heure sur la période choisie">
+</div>
+  <div class="axis" aria-hidden="true">
+<span>00 h</span>
+<span>06 h</span>
+<span>12 h</span>
+<span>18 h</span>
+<span>23 h</span>
+</div>
+  <p id="hours-detail" class="chart-detail" aria-live="polite">Touchez une barre pour voir le total à cette heure.</p>
+</section>

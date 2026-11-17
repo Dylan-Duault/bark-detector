@@ -9,7 +9,7 @@ Type=simple
 User=@USER@
 SupplementaryGroups=audio
 WorkingDirectory=@PROJECT@
-ExecStart=@PYTHON@ -u @PROJECT_ARG@/bark_session_logger.py
+ExecStart=@PYTHON@ -u -m app.cli detector
 Environment=PYTHONUNBUFFERED=1
 Environment=TFHUB_CACHE_DIR=/var/cache/bark-detector/yamnet
 CacheDirectory=bark-detector

@@ -15,3 +15,6 @@ desktop.ini
 
 # Runtime history (logs and audio)
 /data/
+*.egg-info/
+build/
+dist/

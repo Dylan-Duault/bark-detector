@@ -1,7 +1,6 @@
 [Unit]
 Description=Dog bark mobile dashboard
-After=network.target bark-detector.service
-PartOf=bark-detector.service
+After=network.target
 StartLimitIntervalSec=0
 
 [Service]
@@ -9,7 +8,7 @@ Type=simple
 User=@USER@
 SupplementaryGroups=systemd-journal
 WorkingDirectory=@PROJECT@
-ExecStart=@PYTHON@ -u @PROJECT_ARG@/web_server.py --host 0.0.0.0 --port 8080
+ExecStart=@PYTHON@ -u -m app.cli web
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

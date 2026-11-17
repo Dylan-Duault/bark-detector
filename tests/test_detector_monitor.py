@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from detector_monitor import DetectorMonitor, read_monitoring
-from web_server import dashboard_data
+from app.services.dashboard import dashboard_data
 
 
 class MonitorTests(unittest.TestCase):

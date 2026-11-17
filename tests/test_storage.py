@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from storage import prepare_data_directory
-from web_server import dashboard_data
+from app.services.dashboard import dashboard_data
 
 
 class StorageTests(unittest.TestCase):

@@ -1,0 +1,18 @@
+<section class="intro">
+  <div>
+<p class="eyebrow">LE JOURNAL DES ABOIEMENTS</p>
+<h1>Les aboiements de la journée</h1>
+<p>Retrouvez les moments où votre chien a donné de la voix et écoutez les enregistrements.</p>
+</div>
+  <label class="date-label" for="date">Choisir une journée<input type="date" id="date">
+</label>
+</section>
+<div class="toolbar">
+<div class="health-stack">
+<bark-health>
+<p id="detector-status" class="detector-health" data-state="unknown" role="status" aria-live="polite">Vérification de l’écoute…</p>
+</bark-health>
+<p id="status" role="status" aria-live="polite">Chargement des données…</p>
+</div>
+<button id="refresh" type="button">Actualiser ↻</button>
+</div>

@@ -35,6 +35,16 @@ class RecordingTests(unittest.TestCase):
         self.assertIsNone(self.recorder.writer)
         self.assertEqual(list(self.directory.iterdir()), [])
 
+    def test_float_history_duration_keeps_integer_slice_boundaries(self):
+        # Settings supplies durations as floats; real callbacks need not align
+        # exactly with the history boundary (unlike the previous test fixtures).
+        buffer = AudioBuffer(sample_rate=10, chunk_samples=10, history_seconds=3.0)
+        buffer.callback(np.full((16, 1), .1), 16, None, None)
+        buffer.callback(np.full((16, 1), .2), 16, None, None)
+        self.assertEqual(buffer.history_length, 30)
+        np.testing.assert_allclose(np.concatenate(buffer.start_capture()),
+                                   np.array([.1]*14 + [.2]*16))
+
     def test_pretrigger_history_and_tail_have_no_missing_or_duplicate_samples(self):
         for value in (0, .1, .2, .3):
             self.feed(value)

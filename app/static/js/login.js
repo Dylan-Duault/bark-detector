@@ -1,3 +1,5 @@
+import {api} from './shared/http.js';
+
 const form=document.getElementById('login-form');
 const button=document.getElementById('login-button');
 const message=document.getElementById('login-message');
@@ -20,12 +22,16 @@ form.addEventListener('submit',async event=>{
   if (button.disabled) return;
   button.disabled=true; message.textContent='Vérification…';
   try {
-    const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin.value})});
-    const data=await response.json();
-    if (response.ok) { window.location.replace('/'); return; }
+    await api('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pin:pin.value})});
+    window.location.replace('/');
+    return;
+  } catch(error) {
     pin.value='';
-    if (data.retry_after) { wait(data.retry_after, response.status === 401 ? 'Code incorrect.' : 'Veuillez patienter.'); return; }
-    message.textContent=data.error || 'Impossible de vérifier le code. Réessayez.';
-  } catch(error) { message.textContent='Connexion au Pi impossible. Vérifiez votre réseau, puis réessayez.'; }
+    if (error.data?.retry_after) {
+      wait(error.data.retry_after, error.status === 401 ? 'Code incorrect.' : 'Veuillez patienter.');
+      return;
+    }
+    message.textContent=error.data?.error || 'Connexion au Pi impossible. Vérifiez votre réseau, puis réessayez.';
+  }
   button.disabled=false;
 });

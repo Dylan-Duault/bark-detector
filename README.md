@@ -154,7 +154,7 @@ calendrier horizontalement pour parcourir les heures.
 Une **série d’aboiements** est comptée après 90 secondes sans détection. Sa
 durée inclut les pauses entre aboiements : ce n’est ni le temps de vocalisation
 exact ni la durée du fichier audio. La journée en cours peut être incomplète.
-Les jours sans journal sont hachurés ; un journal présent ne garantit pas une
+Les jours sans donnée sont hachurés ; une journée avec des détections ne garantit pas une
 journée entière d’écoute.
 
 ## Accès et confidentialité
@@ -257,8 +257,8 @@ Arrêter d’abord les services correspondants pour éviter de lancer deux
 détecteurs sur le même microphone. Utiliser ensuite deux terminaux :
 
 ```bash
-.venv/bin/python bark_session_logger.py
-.venv/bin/python web_server.py
+.venv/bin/python -m app.cli detector
+.venv/bin/python -m app.cli web
 ```
 
 Le serveur peut consulter l’historique même si le détecteur est arrêté.
@@ -281,8 +281,9 @@ python3 install_services.py --output-dir /tmp/bark-services
 <details>
 <summary>Ajuster la sensibilité et les durées</summary>
 
-Les constantes se trouvent dans `bark_session_logger.py`. Après modification,
-redémarrer `bark-detector`.
+Ces réglages peuvent être définis dans `.env` ; leur validation et leurs valeurs
+par défaut se trouvent dans `app/config.py`. Après modification, redémarrer
+`bark-detector`.
 
 | Réglage | Valeur | Rôle |
 | --- | --- | --- |
@@ -302,44 +303,77 @@ Aucun seuil minimal de confiance YAMNet n’est imposé en plus du classement.
 
 </details>
 
-## Organisation du projet
+## Architecture et développement
 
-| Fichier ou dossier | Usage |
-| --- | --- |
-| `bark_session_logger.py` | Détection et journaux utilisés par les statistiques |
-| `audio_recording.py` | Tampon audio et écriture des enregistrements |
-| `web_server.py` | Serveur HTTP, statistiques et lecture audio |
-| `dashboard_auth.py` | Code d’accès, sessions et délais |
-| `storage.py` | Emplacement commun des journaux et enregistrements |
-| `detector_monitor.py` | État du détecteur et durée d’écoute mesurée |
-| `web/` | Interface mobile, connexion et graphiques |
-| `install_services.py`, `systemd/` | Installation et démarrage automatique |
-| `yamnet_class_map.csv` | Les 521 catégories du modèle |
-| `tests/` | Vérifications audio, statistiques, authentification et installation |
-| `docs/images/` | Captures d’écran de l’interface |
+Le projet utilise **FastAPI, Jinja2, SQLAlchemy et Alembic**. Le frontend est
+organisé en **Web Components natifs**, avec des modules JavaScript locaux.
+Aucune compilation frontend ni ressource CDN n’est nécessaire.
 
-L’historique est regroupé dans `data/`, créé automatiquement au démarrage et
-entièrement exclu de Git :
+- [Architecture, repères Laravel et conventions](docs/ARCHITECTURE.md)
+- [Migration depuis la v1, vérifications et retour arrière](docs/MIGRATION.md)
+
+```text
+app/controllers/       Requêtes et réponses HTTP
+app/schemas.py         Validation et contrats de l’API
+app/models/            Modèles SQLAlchemy
+app/services/          Règles métier : statistiques, audio, musique, séries
+app/infrastructure/    SQLite, YAMNet et journaux systemd
+app/templates/         Layout Jinja2 et fragments HTML par composant
+app/static/js/         Composants interactifs et modules partagés
+app/migrations/        Migrations Alembic
+```
+
+Pour travailler uniquement sur le dashboard, sans TensorFlow ni microphone :
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+cp .env.example .env
+# Renseigner DASHBOARD_PIN dans .env
+.venv/bin/python -m app.cli web --host 127.0.0.1
+```
+
+Le détecteur nécessite l’extra `detector` (installé par `requirements.txt`).
+Après une modification Python, relancer le processus concerné. Les modules
+JavaScript et les vues ne demandent pas de build. La documentation de l’API est
+accessible sur `/docs` après connexion au dashboard.
+
+## Données et commandes
 
 ```text
 data/
-├── logs/         # Historique des extraits et séries, un journal par jour
-├── recordings/   # Fichiers audio WAV
-└── monitoring.sqlite3  # État du détecteur et durées d’écoute par jour et heure
+├── bark.sqlite3       # Détections, séries, musique, audio indexé et monitoring
+├── recordings/        # WAV terminés et fichiers temporaires .wav.part
+├── music/             # Playlist locale et position de rotation
+├── logs/              # Journaux historiques v1 conservés pour la migration
+└── backups/before-v2/  # Métadonnées historiques sauvegardées avant import
 ```
 
-Sauvegarder ce dossier pour conserver l’historique en cas de panne de la carte.
-Le code d’accès reste dans `.env`, séparé de l’historique et lui aussi exclu de Git :
+Les fichiers audio restent sur disque. Le dashboard lit les statistiques dans
+SQLite ; il ne reparcourt pas les anciens journaux à chaque actualisation.
+Un WAV en cours d’écriture n’est publié et indexé qu’une fois terminé.
 
-- `.env` : code d’accès ;
-- `data/logs/bark_log_YYYY-MM-DD.txt` : extraits reconnus et séries ;
-- `data/recordings/bark_audio_YYYY-MM-DD_HH-MM-SS.wav` : audio terminé, nommé à l’heure
-  du déclenchement ;
-- `data/recordings/*.wav.part` : enregistrement temporaire, absent de l’interface ;
-- `data/monitoring.sqlite3` : état du détecteur et durées d’écoute, conservés après redémarrage.
+```bash
+# Appliquer le schéma et importer l’historique sans doublons
+.venv/bin/python -m app.cli migrate
 
-Le suivi est enregistré environ toutes les 5 secondes, et lors d’un arrêt propre.
-Une coupure brutale peut perdre les dernières secondes de mesure.
+# Comparer les données historiques aux données importées
+.venv/bin/python -m app.cli verify
+
+# Réindexer les WAV ajoutés ou supprimés manuellement
+.venv/bin/python -m app.cli sync
+
+# Lancer chaque processus séparément
+.venv/bin/python -m app.cli web
+.venv/bin/python -m app.cli detector
+```
+
+Le schéma et l’import sont aussi préparés au démarrage. Lors du passage d’une
+installation v1 à la v2, utiliser l’installateur décrit dans le guide de migration
+pour arrêter les anciens producteurs avant le dernier import.
+
+Sauvegarder le dossier `data/` complet lorsque les services sont arrêtés, ou
+utiliser la sauvegarde SQLite pour une base active. `.env` reste séparé et privé.
 
 ## Vérifications
 
@@ -347,9 +381,21 @@ Une coupure brutale peut perdre les dernières secondes de mesure.
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Les tests utilisent des données et serveurs temporaires, sans microphone ni
-chargement de YAMNet. TensorFlow est nécessaire au détecteur ; le serveur web
-et l’authentification utilisent uniquement Python standard.
+Les tests utilisent des données temporaires. Ils couvrent l’authentification,
+les requêtes audio partielles, les statistiques, les sessions, les enregistrements,
+la musique, la migration et le monitoring, sans microphone ni chargement de YAMNet.
+Les tests audio nécessitent NumPy et SoundFile (extra `detector`). Pour les tests
+web seuls : `python -m unittest discover -s tests -p test_web_server.py -v`.
+
+Un test navigateur optionnel utilise Firefox sur Linux et des données de démonstration :
+
+```bash
+.venv/bin/python -m pip install -e '.[dev,browser]'
+.venv/bin/python tests/browser_smoke.py
+```
+
+Il vérifie les composants, les filtres, les lecteurs et la connexion, puis met
+à jour les captures de `docs/images/` sans utiliser les données réelles.
 
 ## Origine et licence
 
@@ -357,9 +403,8 @@ Ce projet est un fork de [SteveJ71/bark-detector](https://github.com/SteveJ71/ba
 adapté à un usage quotidien sur Raspberry Pi avec une interface web mobile.
 Il est distribué sous [licence MIT](LICENSE).
 
-Le redémarrage de `bark-detector` redémarre également `bark-dashboard` pour charger
-les changements de l’API. Son arrêt arrête aussi le dashboard ; celui-ci peut toujours
-être démarré ou redémarré séparément.
+Les deux services redémarrent indépendamment. Le dashboard reste consultable
+même lorsque le détecteur est arrêté.
 Avant chaque musique, le lecteur vérifie la connexion Bluetooth à l’Acton III,
 tente de la reconnecter, attend sa sortie PipeWire et la sélectionne par défaut.
 Si l’enceinte est indisponible, la lecture est annulée et la cause apparaît dans

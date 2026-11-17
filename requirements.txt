@@ -1,6 +1,2 @@
-sounddevice
-numpy
-tensorflow>=2.16
-tensorflow-hub
-soundfile
-setuptools<81
+# Complete Raspberry Pi installation. Web only: pip install -e '.[dev]'
+-e .[detector,dev]

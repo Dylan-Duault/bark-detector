@@ -1,3 +1,5 @@
+import {api} from './shared/http.js';
+import './shared/session.js';
 const $ = id => document.getElementById(id);
 let paused = false;
 let current = 0;
@@ -6,10 +8,7 @@ async function refresh() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(`/api/logs?source=${encodeURIComponent($('source').value)}`, {cache:'no-store', signal:controller.signal});
-    if (response.status === 401) { window.location.replace('/login?expired=1'); return; }
-    if (!response.ok) throw new Error();
-    const data = await response.json();
+    const data = await api(`/api/logs?source=${encodeURIComponent($('source').value)}`, {signal:controller.signal});
     if (version !== current) return;
     $('log-output').textContent = data.entries.map(entry => `${new Date(entry.timestamp * 1000).toLocaleString('fr-FR')}  ${entry.message}`).join('\n') || 'Aucune ligne disponible pour ce service.';
     if ($('follow').checked) $('log-output').scrollTop = $('log-output').scrollHeight;

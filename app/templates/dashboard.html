@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Journal des aboiements{% endblock %}
+{% block content %}
+<bark-dashboard>
+{% include 'components/intro.html' %}
+<bark-metrics>
+{% include 'components/metrics.html' %}
+</bark-metrics>
+<bark-activity>
+{% include 'components/activity.html' %}
+</bark-activity>
+<bark-recordings>
+{% include 'components/recordings.html' %}
+</bark-recordings>
+<bark-music>
+{% include 'components/music.html' %}
+</bark-music>
+<bark-history>
+{% include 'components/history.html' %}
+</bark-history>
+<bark-trends>
+{% include 'components/trends.html' %}
+</bark-trends>
+<footer>Les données sont actualisées toutes les 30 secondes.<br>Les sons reconnus comme ceux d’un chien peuvent inclure des aboiements, des hurlements et des gémissements.</footer>
+</bark-dashboard>
+{% endblock %}
+{% block scripts %}<script type="module" src="/static/js/dashboard.js">
+</script>{% endblock %}

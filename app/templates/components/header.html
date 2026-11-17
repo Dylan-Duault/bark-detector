@@ -1,0 +1,11 @@
+<header>
+  <a class="brand" href="/" aria-label="Accueil">À l’écoute<span>LE JOURNAL DE VOTRE CHIEN</span>
+</a>
+  {% if request.url.path != '/login' %}
+  <nav class="header-nav" aria-label="Navigation principale">
+    {% if request.url.path == '/logs' %}<a href="/">Retour au journal</a>
+    {% else %}<a href="/logs">Logs en direct</a>{% endif %}
+    <button type="button" id="logout">Se déconnecter</button>
+  </nav>
+  {% endif %}
+</header>

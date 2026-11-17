@@ -1,15 +1,14 @@
 import datetime as dt
-import http.client
 import json
 from pathlib import Path
 import tempfile
-import threading
 import unittest
 import wave
 from unittest.mock import Mock
-from http.server import ThreadingHTTPServer
 
-from web_server import dashboard_data, make_handler, recording_levels, live_logs
+from app.services.dashboard import dashboard_data
+from app.services.recordings import recording_levels
+from app.infrastructure.journal import live_logs
 
 
 class DashboardTests(unittest.TestCase):
@@ -110,92 +109,85 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(len(data['recordings']), 1)
         self.assertEqual(dashboard_data(self.directory, '2026-11-13')['summary']['detections'], 0)
 
+    def client(self):
+        from fastapi.testclient import TestClient
+        from app.config import Settings
+        from app.main import create_app
+        return TestClient(create_app(Settings(_env_file=None, data_dir=self.directory, dashboard_pin='1234')), follow_redirects=False)
+
     def test_authentication_covers_api_audio_and_logout(self):
-        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.directory, '1234'))
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        client = http.client.HTTPConnection(*server.server_address)
-        def call(method, path, body=None, headers=None):
-            client.request(method, path, body=body, headers=headers or {})
-            response = client.getresponse()
-            result = response.status, dict(response.getheaders()), response.read()
-            return result
-        try:
-            self.assertEqual(call('GET', '/')[0], 303)
+        with self.client() as client:
+            self.assertEqual(client.get('/').status_code, 303)
             for method in ('GET', 'HEAD'):
-                for path in ('/api/dashboard', '/audio/'+self.name, '/api/waveform/'+self.name, '/app.js'):
-                    self.assertEqual(call(method, path)[0], 401)
-            self.assertEqual(call('GET', '/login')[0], 200)
-            self.assertEqual(call('GET', '/login.js')[0], 200)
-            self.assertEqual(call('POST', '/api/login', '{"pin":"1234"}', {'Origin':'http://evil.example'})[0], 403)
-            status, headers, _ = call('POST', '/api/login', '{"pin":"1234"}')
-            self.assertEqual(status, 200)
-            cookie = headers['Set-Cookie']
+                for path in ('/api/dashboard', '/audio/'+self.name, '/api/waveform/'+self.name, '/app.js', '/docs', '/openapi.json', '/static/js/dashboard.js'):
+                    self.assertEqual(client.request(method, path).status_code, 401)
+            self.assertEqual(client.get('/login').status_code, 200)
+            self.assertEqual(client.get('/login.js').status_code, 200)
+            self.assertEqual(client.post('/api/login', json={'pin':'1234'}, headers={'Origin':'http://evil.example'}).status_code, 403)
+            response = client.post('/api/login', json={'pin':'1234'})
+            self.assertEqual(response.status_code, 200)
+            cookie = response.headers['set-cookie']
             self.assertIn('HttpOnly', cookie)
-            self.assertIn('SameSite=Strict', cookie)
+            self.assertIn('SameSite=strict', cookie)
             self.assertNotIn('1234', cookie)
-            session = {'Cookie':cookie.split(';')[0]}
-            self.assertEqual(call('GET', '/api/dashboard', headers=session)[0], 200)
-            self.assertEqual(call('GET', '/audio/'+self.name, headers=dict(session, Range='bytes=0-43'))[0], 206)
-            self.assertEqual(call('GET', '/.env', headers=session)[0], 404)
-            status, headers, _ = call('POST', '/api/login', '{"pin":"0000"}')
-            self.assertEqual(status, 401)
-            self.assertEqual(headers['Retry-After'], '2')
-            self.assertEqual(call('POST', '/api/login', '{"pin":"1234"}')[0], 429)
-            self.assertEqual(call('POST', '/api/logout', headers=session)[0], 200)
-            self.assertEqual(call('GET', '/api/dashboard', headers=session)[0], 401)
-        finally:
-            client.close()
-            server.shutdown()
-            server.server_close()
-            thread.join()
+            self.assertEqual(client.get('/api/dashboard').status_code, 200)
+            self.assertEqual(client.get('/audio/'+self.name, headers={'Range':'bytes=0-43'}).status_code, 206)
+            self.assertEqual(client.get('/.env').status_code, 404)
+            response = client.post('/api/login', json={'pin':'0000'})
+            self.assertEqual(response.status_code, 401)
+            self.assertEqual(response.headers['Retry-After'], '2')
+            self.assertEqual(client.post('/api/login', json={'pin':'1234'}).status_code, 429)
+            self.assertEqual(client.post('/api/logout').status_code, 200)
+            self.assertEqual(client.get('/api/dashboard').status_code, 401)
 
     def test_http_audio_seeking_and_path_restrictions(self):
-        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.directory, '1234'))
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        client = http.client.HTTPConnection(*server.server_address)
-        def get(path, headers=None, method='GET'):
-            client.request(method, path, headers=headers or {})
-            response = client.getresponse()
-            return response.status, dict(response.getheaders()), response.read()
-        try:
-            client.request('POST', '/api/login', body=json.dumps({'pin':'1234'}), headers={'Content-Type':'application/json'})
-            login = client.getresponse()
-            self.assertEqual(login.status, 200)
-            cookie = login.getheader('Set-Cookie').split(';')[0]
-            login.read()
-            original_get = get
-            def get(path, headers=None, method='GET'):
-                return original_get(path, dict({'Cookie':cookie}, **(headers or {})), method)
-            status, _, body = get('/api/dashboard?date='+self.date)
-            self.assertEqual(status, 200)
-            self.assertEqual(json.loads(body)['summary']['detections'], 3)
-            status, _, envelope = get('/api/waveform/'+self.name)
-            self.assertEqual(status, 200)
-            self.assertEqual(json.loads(envelope)['peak_dbfs'], -60)
-            self.assertEqual(get('/api/waveform/../README.md')[0], 404)
-            self.assertEqual(get('/api/waveform/'+self.name, method='HEAD')[2], b'')
-            status, headers, body = get('/audio/'+self.name, {'Range':'bytes=44-75'})
-            self.assertEqual(status, 206)
-            self.assertEqual(len(body), 32)
-            self.assertEqual(headers['Content-Range'], 'bytes 44-75/1920044')
-            self.assertEqual(get('/audio/'+self.name, {'Range':'bytes=-12'})[2], b'\0'*12)
-            self.assertEqual(get('/audio/'+self.name, {'Range':'bytes=99999999-'})[0], 416)
-            self.assertEqual(get('/audio/'+self.name, method='HEAD')[2], b'')
-            for path in ('/audio/../README.md', '/audio/%2e%2e%2fREADME.md', '/README.md', '/.git/config'):
-                self.assertEqual(get(path)[0], 404)
-            self.assertEqual(get('/api/dashboard?date=oops')[0], 400)
-            self.assertEqual(get('/api/dashboard?period=30')[0], 200)
+        with self.client() as client:
+            self.assertEqual(client.post('/api/login', json={'pin':'1234'}).status_code, 200)
+            response = client.get('/api/dashboard?date='+self.date)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['summary']['detections'], 3)
+            response = client.get('/api/waveform/'+self.name)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['peak_dbfs'], -60)
+            self.assertEqual(client.head('/api/waveform/'+self.name).content, b'')
+            response = client.get('/audio/'+self.name, headers={'Range':'bytes=44-75'})
+            self.assertEqual(response.status_code, 206)
+            self.assertEqual(len(response.content), 32)
+            self.assertEqual(response.headers['Content-Range'], 'bytes 44-75/1920044')
+            self.assertEqual(client.get('/audio/'+self.name, headers={'Range':'bytes=-12'}).content, b'\0'*12)
+            self.assertEqual(client.get('/audio/'+self.name, headers={'Range':'bytes=99999999-'}).status_code, 416)
+            self.assertEqual(client.head('/audio/'+self.name).content, b'')
+            for path in ('/audio/../README.md', '/audio/%2e%2e%2fREADME.md', '/api/waveform/../README.md', '/README.md', '/.git/config'):
+                self.assertEqual(client.get(path).status_code, 404)
+            self.assertEqual(client.get('/api/dashboard?date=oops').status_code, 400)
+            self.assertEqual(client.get('/api/dashboard?period=30').status_code, 200)
             for period in ('0', '365', 'bad'):
-                self.assertEqual(get('/api/dashboard?period='+period)[0], 400)
-            for path in ('/', '/app.js', '/style.css'):
-                self.assertEqual(get(path)[0], 200)
-        finally:
-            client.close()
-            server.shutdown()
-            server.server_close()
-            thread.join()
+                self.assertEqual(client.get('/api/dashboard?period='+period).status_code, 400)
+            for path in ('/', '/logs', '/app.js', '/style.css', '/static/js/components/bark-recording.js'):
+                self.assertEqual(client.get(path).status_code, 200)
+
+    def test_invalid_login_payloads_are_bounded_and_never_echoed(self):
+        with self.client() as client:
+            for payload in ({'pin':1234}, {'pin':'1234', 'extra':'secret'}, {'pin':'secret'}, {}):
+                response = client.post('/api/login', json=payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn('secret', response.text)
+            self.assertEqual(client.post('/api/login', content='x'*1025).status_code, 413)
+            self.assertEqual(client.post('/api/login', json={'pin':'1234'}, headers={'Sec-Fetch-Site':'cross-site'}).status_code, 403)
+
+    def test_audio_symlinks_and_partial_files_are_not_served(self):
+        (self.directory / 'recordings' / 'bark_audio_2026-11-14_09-00-00.wav').symlink_to(self.directory / 'recordings' / self.name)
+        with self.client() as client:
+            client.post('/api/login', json={'pin':'1234'})
+            self.assertEqual(client.get('/audio/bark_audio_2026-11-14_09-00-00.wav').status_code, 404)
+            self.assertEqual(client.get('/audio/'+self.name+'.part').status_code, 404)
+            self.assertEqual(client.get('/api/dashboard').headers['Cache-Control'], 'no-store')
+
+    def test_web_application_does_not_import_tensorflow(self):
+        import subprocess, sys
+        result = subprocess.run([sys.executable, '-c',
+            "import sys; from app.main import create_app; assert 'tensorflow' not in sys.modules; assert 'sounddevice' not in sys.modules"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ from bark_music import BarkMusic, load_music_config, play_track, ensure_speaker
 
 class MusicTests(unittest.TestCase):
     def setUp(self):
-        logger = patch('bark_music.log_music_event')
+        logger = patch('app.services.music.log_music_event')
         logger.start()
         self.addCleanup(logger.stop)
         self.tmp = tempfile.TemporaryDirectory()

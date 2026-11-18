@@ -1,5 +1,6 @@
 """Application composition. No TensorFlow or hardware imports in the web app."""
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -9,7 +10,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings
-from app.controllers import auth, dashboard, logs, pages, recordings
+from app.controllers import auth, dashboard, live, logs, pages, recordings
 from app.infrastructure.database import Database
 from app.services.auth import Auth
 from app.services.dashboard import Dashboard
@@ -29,10 +30,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.dashboard = Dashboard(database)
             yield
         finally:
-            database.close()
+            try:
+                if app.state.live_task is not None:
+                    app.state.live_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await app.state.live_task
+            finally:
+                database.close()
 
     app = FastAPI(title='À l’écoute', version='2.0.0', lifespan=lifespan)
     app.state.settings = settings
+    app.state.live_busy = False
+    app.state.live_task = None
     app.state.auth = Auth(pin)
 
     @app.exception_handler(RequestValidationError)
@@ -51,7 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         public = path in ('/login', '/api/login', '/login.js', '/style.css',
                           '/static/js/login.js', '/static/js/shared/http.js', '/static/css/style.css')
         if not public and not app.state.auth.authenticated(request.headers.get('cookie')):
-            if path in ('/', '/logs'):
+            if path in ('/', '/logs', '/direct'):
                 return RedirectResponse('/login', status_code=303)
             return JSONResponse({'error': 'Authentification requise.'}, status_code=401)
         response = await call_next(request)
@@ -66,7 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.body_iterator = empty_body()
         return response
 
-    for router in (auth.router, dashboard.router, recordings.router, logs.router, pages.router):
+    for router in (auth.router, dashboard.router, recordings.router, live.router, logs.router, pages.router):
         app.include_router(router)
     app.mount('/static', StaticFiles(directory=Path(__file__).parent / 'static'), name='static')
     return app

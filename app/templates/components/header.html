@@ -1,10 +1,12 @@
 <header>
-  <a class="brand" href="/" aria-label="Accueil">À l’écoute<span>LE JOURNAL DE VOTRE CHIEN</span>
-</a>
+  <a class="brand" href="/" aria-label="Accueil">À l’écoute</a>
   {% if request.url.path != '/login' %}
   <nav class="header-nav" aria-label="Navigation principale">
-    {% if request.url.path == '/logs' %}<a href="/">Retour au journal</a>
-    {% else %}<a href="/logs">Logs en direct</a>{% endif %}
+    <a href="/"{% if request.url.path == '/' %} aria-current="page"{% endif %}>Journal</a>
+    {% if request.app.state.settings.live_audio_enabled %}
+    <a href="/direct"{% if request.url.path == '/direct' %} aria-current="page"{% endif %}>Direct</a>
+    {% endif %}
+    <a href="/logs"{% if request.url.path == '/logs' %} aria-current="page"{% endif %}>Diagnostic</a>
     <button type="button" id="logout">Se déconnecter</button>
   </nav>
   {% endif %}

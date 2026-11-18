@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from detector_monitor import DetectorMonitor, read_monitoring
+from app.services.monitoring import DetectorMonitor, read_monitoring
 from app.services.dashboard import dashboard_data
 
 

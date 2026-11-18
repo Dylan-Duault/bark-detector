@@ -30,13 +30,13 @@ seconde copie des WAV ni les futures données v2.
 Pour préparer uniquement les unités sans toucher aux services :
 
 ```bash
-.venv/bin/python install_services.py --output-dir /tmp/bark-services-v2
+.venv/bin/python -m app.cli install-services --output-dir /tmp/bark-services-v2
 ```
 
 ## Bascule
 
 ```bash
-sudo .venv/bin/python install_services.py
+sudo .venv/bin/python -m app.cli install-services
 ```
 
 Le compte de service est l’utilisateur qui a lancé `sudo`, ou le propriétaire

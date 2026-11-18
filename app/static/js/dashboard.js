@@ -3,9 +3,7 @@ import './shared/session.js';
 import './components/bark-health.js';
 import './components/bark-metrics.js';
 import './components/bark-activity.js';
-import './components/bark-recordings.js';
-import './components/bark-music.js';
-import './components/bark-history.js';
+import './components/bark-timeline.js';
 import './components/bark-trends.js';
 
 /** Coordinates filters and requests; each child owns its rendering and behavior. */
@@ -19,10 +17,6 @@ class BarkDashboard extends HTMLElement {
     this.querySelector('#date').value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     this.querySelector('#date').addEventListener('change', () => this.refresh(), options);
     this.querySelector('#refresh').addEventListener('click', () => this.refresh(), options);
-    this.addEventListener('select-date', event => {
-      this.querySelector('#date').value = event.detail;
-      this.refresh();
-    }, options);
     this.querySelectorAll('[data-period]').forEach(button => button.addEventListener('click', () => {
       this.period = Number(button.dataset.period);
       this.querySelectorAll('[data-period]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
@@ -51,7 +45,7 @@ class BarkDashboard extends HTMLElement {
     try {
       const data = await api(`/api/dashboard?date=${encodeURIComponent(date)}&period=${this.period}`, {signal: this.request.signal});
       if (version !== this.version) return;
-      for (const name of ['metrics', 'activity', 'recordings', 'music', 'history']) this.querySelector(`bark-${name}`).update(data);
+      for (const name of ['metrics', 'activity', 'timeline']) this.querySelector(`bark-${name}`).update(data);
       this.querySelector('bark-health').update(data.detector);
       this.querySelector('bark-trends').update(data.trends);
       status.textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}`;

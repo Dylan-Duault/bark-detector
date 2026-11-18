@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 detector = ["numpy", "sounddevice", "soundfile", "tensorflow>=2.16", "tensorflow-hub", "setuptools<81"]
 dev = ["httpx>=0.27,<1"]
+live = ["aiortc>=1.14,<2"]
 browser = ["websocket-client>=1.8,<2"]
 
 [project.scripts]
@@ -24,4 +25,4 @@ bark = "app.cli:main"
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["templates/**/*.html", "static/**/*.js", "static/**/*.css", "assets/*.csv", "migrations/*.py", "migrations/versions/*.py", "migrations/*.mako"]
+app = ["templates/**/*.html", "static/**/*.js", "static/**/*.css", "assets/*.csv", "assets/systemd/*.service", "migrations/*.py", "migrations/versions/*.py", "migrations/*.mako"]

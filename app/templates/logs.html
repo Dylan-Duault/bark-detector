@@ -1,22 +1,32 @@
 {% extends 'base.html' %}
-{% block title %}Logs en direct{% endblock %}
-{% block main_class %}{% endblock %}
-{% block content %}<p class="eyebrow">SUIVI DU SYSTÈME</p>
-<h1>Logs en direct</h1>
-<p>Les 200 dernières lignes du service choisi, actualisées toutes les 2 secondes.</p>
-<div class="log-controls">
-<label for="source">Service<select id="source">
-<option value="detector">Détecteur et musique</option>
-<option value="dashboard">Dashboard</option>
-</select>
-</label>
-<button id="pause" type="button" aria-pressed="false">Mettre en pause</button>
-<button id="refresh" type="button">Actualiser</button>
-<label>
-<input id="follow" type="checkbox" checked> Suivre les nouvelles lignes</label>
-</div>
-<p id="log-status" role="status" class="muted">Chargement…</p>
-<pre id="log-output" class="log-output" tabindex="0" aria-label="Journal du service">
-</pre>{% endblock %}
-{% block scripts %}<script type="module" src="/static/js/logs.js">
-</script>{% endblock %}
+{% block title %}Diagnostic{% endblock %}
+{% block content %}
+<section class="intro">
+  <div>
+    <h1>Diagnostic</h1>
+    <p>Consultez les journaux techniques du détecteur et de l’interface web.</p>
+  </div>
+</section>
+<section class="panel diagnostics" aria-labelledby="diagnostic-heading">
+  <div class="section-title">
+    <h2 id="diagnostic-heading">Journal du service</h2>
+  </div>
+  <p class="muted">Les 200 dernières lignes du service choisi, actualisées toutes les 2 secondes.</p>
+  <div class="log-controls">
+    <label class="log-source" for="source">Service
+      <select id="source">
+        <option value="detector">Détecteur et musique</option>
+        <option value="dashboard">Interface web</option>
+      </select>
+    </label>
+    <button id="pause" type="button" aria-pressed="false">Pause</button>
+    <button id="refresh" type="button">Actualiser ↻</button>
+  </div>
+  <div class="log-toolbar">
+    <p id="log-status" role="status" class="detector-health" data-state="unknown">Chargement…</p>
+    <label class="log-follow"><input id="follow" type="checkbox" checked> Suivre les nouvelles lignes</label>
+  </div>
+  <pre id="log-output" class="log-output" tabindex="0" aria-label="Journal du service"></pre>
+</section>
+{% endblock %}
+{% block scripts %}<script type="module" src="/static/js/logs.js"></script>{% endblock %}

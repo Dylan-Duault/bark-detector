@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from storage import prepare_data_directory
+from app.infrastructure.paths import prepare_data_directory
 from app.services.dashboard import dashboard_data
 
 

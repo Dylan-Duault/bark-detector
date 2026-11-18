@@ -64,16 +64,13 @@ natifs : aucun CDN, gestionnaire Node ou compilation n’est nécessaire.
 | `bark-health` | État du détecteur |
 | `bark-metrics` | Compteurs et durée d’écoute |
 | `bark-activity` | Activité de la journée |
-| `bark-recordings` | Liste des lecteurs, conservés par nom de fichier |
+| `bark-timeline` | Enregistrements et événements musicaux triés par heure, lecteurs conservés par nom de fichier |
 | `bark-recording` | Un lecteur, sa courbe, son curseur et son téléchargement |
-| `bark-music` | Événements du lecteur de musique |
-| `bark-history` | Choix d’une journée ; événement `select-date` |
 | `bark-trends` | Graphiques et calendrier sur 7 / 30 jours |
 
 Chaque composant de présentation reçoit ses données par `update(data)`.
 Il ne modifie que son propre DOM. Les sélecteurs sont locaux au composant.
-Les événements entre composants sont des `CustomEvent` ; les données circulent
-depuis le coordinateur vers les composants enfants.
+Les données circulent depuis le coordinateur vers les composants enfants.
 
 Les lecteurs ont une identité stable : un rafraîchissement ne recrée pas un
 lecteur existant. La courbe est chargée à l’approche du viewport. Retirer un
@@ -122,8 +119,10 @@ Relire le fichier généré avant application, puis lancer `migrate` sur des don
 de test. Les anciennes migrations décrivent leur propre schéma figé ; elles
 n’importent pas les modèles courants.
 
-Les anciens fichiers Python à la racine sont des lanceurs ou imports de
-compatibilité. Toute nouvelle logique va dans `app/`.
+Tout le code Python de l’application se trouve dans `app/`. La racine ne contient
+aucun lanceur ni module de compatibilité. L’installation systemd passe par
+`bark install-services` ou `python -m app.cli install-services`. Les modèles
+d’unités sont fournis dans `app/assets/systemd/`, y compris dans le paquet installé.
 
 Les commandes se lancent depuis le répertoire du projet : `.env` et `data/`
 sont recherchés dans ce répertoire de travail. `DATA_DIR` permet de changer le

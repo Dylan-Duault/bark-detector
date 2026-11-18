@@ -48,6 +48,11 @@ with tempfile.TemporaryDirectory(prefix='bark-docs-') as scratch:
         with wave.open(str(data/'recordings'/f'bark_audio_{today}_{clock}.wav'),'wb') as file:
             file.setnchannels(1);file.setsampwidth(2);file.setframerate(16000)
             file.writeframes(b'\0\0'*16000*seconds)
+    music = [
+        dict(time='16:00:00', track='calm.mp3', status='started', detail=''),
+        dict(time='10:00:00', track='calm.mp3', status='failed', detail='Enceinte indisponible'),
+    ]
+    (data/'logs'/f'music_{today}.jsonl').write_text(''.join(json.dumps(event) + '\n' for event in music))
     from app.services.monitoring import DetectorMonitor
     monitor=DetectorMonitor(data)
     monitor.processed(time.time(),1.2)
@@ -131,7 +136,10 @@ with tempfile.TemporaryDirectory(prefix='bark-docs-') as scratch:
         assert status==200,status
         call('browsingContext.navigate',dict(context=context,url=base+'/',wait='complete'))
         wait_for("document.querySelector('#status')?.textContent.startsWith('Mis à jour')")
-        assert evaluate("document.querySelectorAll('#recordings audio').length")==3
+        assert evaluate("document.querySelectorAll('#timeline audio').length")==3
+        assert evaluate("Array.from(document.querySelectorAll('#timeline time'), node => node.textContent).join(',')") == '17:08:42,16:00:00,12:34:18,10:00:00,08:12:04'
+        assert evaluate("document.querySelector('.music-event[data-status=started]').textContent.includes('calm.mp3')")
+        assert evaluate("document.querySelector('.music-event[data-status=failed]').textContent.includes('Enceinte indisponible')")
         evaluate("window.savedPlayer=document.querySelector('audio');window.savedPlayer.currentTime=2;document.querySelector('bark-dashboard').refresh()")
         wait_for("document.querySelector('#status').textContent.startsWith('Mis à jour')")
         assert evaluate("document.querySelector('audio')===window.savedPlayer"), 'Refresh replaced player'
@@ -140,7 +148,7 @@ with tempfile.TemporaryDirectory(prefix='bark-docs-') as scratch:
         call('browsingContext.setViewport',dict(context=context,viewport=dict(width=430,height=height),devicePixelRatio=1))
         capture('dashboard-mobile.png')
         call('browsingContext.setViewport',dict(context=context,viewport=dict(width=430,height=740),devicePixelRatio=1))
-        evaluate("document.querySelector('#recordings').closest('section').scrollIntoView({block:'start'})")
+        evaluate("document.querySelector('#timeline').closest('section').scrollIntoView({block:'start'})")
         time.sleep(.2)
         evaluate("document.querySelectorAll('audio').forEach(audio=>{audio.preload='metadata';audio.load();})")
         wait_for("[...document.querySelectorAll('audio')].every(audio=>Number.isFinite(audio.duration))")
@@ -167,6 +175,20 @@ with tempfile.TemporaryDirectory(prefix='bark-docs-') as scratch:
         evaluate("document.querySelector('#date').value='2026-01-01';document.querySelector('bark-dashboard').refresh()")
         wait_for("document.querySelector('#detections').textContent==='—'")
         assert evaluate("document.querySelector('#activity-note').textContent.includes('Aucune donnée')")
+        assert evaluate("!document.querySelector('#timeline-empty').hidden && !document.querySelector('#timeline li')")
+        call('browsingContext.navigate',dict(context=context,url=base+'/logs',wait='complete'))
+        assert evaluate("document.querySelector('nav [aria-current=page]').textContent === 'Diagnostic'")
+        assert evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        evaluate("""window.fetch = async url => new Response(JSON.stringify({
+            entries: [{timestamp: 0, message: new URL(url, location.href).searchParams.get('source')}]
+        }));document.querySelector('#pause').click();document.querySelector('#refresh').click()""")
+        wait_for("document.querySelector('#log-output').textContent.includes('detector')")
+        assert evaluate("document.querySelector('#pause').getAttribute('aria-pressed') === 'true'")
+        evaluate("document.querySelector('#source').value='dashboard';document.querySelector('#source').dispatchEvent(new Event('change'))")
+        wait_for("document.querySelector('#log-output').textContent.includes('dashboard')")
+        evaluate("document.querySelector('#pause').click()")
+        wait_for("document.querySelector('#log-status').dataset.state === 'listening'")
+        call('browsingContext.navigate',dict(context=context,url=base+'/',wait='complete'))
         evaluate("fetch('/api/logout',{method:'POST'}).then(r=>r.ok)")
         call('browsingContext.navigate',dict(context=context,url=base+'/login?expired=1',wait='complete'))
         assert evaluate("document.querySelector('#login-message').textContent.includes('expiré')")

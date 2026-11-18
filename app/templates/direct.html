@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Direct{% endblock %}
+{% block content %}
+<section class="intro">
+  <div>
+    <h1>Direct</h1>
+    <p>Écoute le micro de la maison et parle à ton chien via l’enceinte.</p>
+  </div>
+</section>
+<section class="panel direct-panel" aria-labelledby="direct-heading">
+  <div class="section-title">
+    <h2 id="direct-heading">Audio de la maison</h2>
+  </div>
+  {% if enabled %}
+  <p id="direct-status" class="detector-health" role="status" data-state="unknown">Hors ligne</p>
+  <div class="direct-controls">
+    <button id="direct-connect" type="button">Écouter la maison</button>
+    <button id="direct-speaker-retry" type="button" hidden>Reconnecter l’enceinte</button>
+    <button id="direct-talk" type="button" aria-pressed="false" aria-describedby="direct-help" disabled>Maintenir pour parler</button>
+  </div>
+  <p id="direct-speaker" class="muted" role="status" hidden></p>
+  <p id="direct-help" class="muted">Le micro de ton appareil reste prêt pendant le direct. Ta voix est transmise uniquement pendant l’appui. Au clavier, maintiens Espace pour parler.</p>
+  <label class="direct-monitor">
+    <input id="direct-monitor" type="checkbox" aria-describedby="direct-monitor-help">
+    Entendre le retour pendant la parole
+  </label>
+  <p id="direct-monitor-help" class="muted">Écoute le son capté dans la pièce, y compris ta voix. Utilise des écouteurs pour éviter l’écho.</p>
+  <audio id="direct-audio" autoplay playsinline hidden></audio>
+  <button id="direct-play" type="button" hidden>Activer le son</button>
+  {% else %}
+  <p class="empty">Le direct est désactivé sur ce Pi.</p>
+  {% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+  {% if enabled %}<script type="module" src="/static/js/direct.js"></script>
+  {% else %}<script type="module" src="/static/js/shared/session.js"></script>{% endif %}
+{% endblock %}

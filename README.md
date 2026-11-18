@@ -92,7 +92,7 @@ conserver le `.env` existant. Ce fichier n’est pas envoyé dans Git.
 ### 3. Activer le démarrage automatique
 
 ```bash
-sudo .venv/bin/python install_services.py
+sudo .venv/bin/python -m app.cli install-services
 ```
 
 L’installateur configure et démarre deux services indépendants :
@@ -273,7 +273,7 @@ L’installateur accepte `--user NOM` pour un autre compte. Pour générer les
 unités sans les installer :
 
 ```bash
-python3 install_services.py --output-dir /tmp/bark-services
+.venv/bin/python -m app.cli install-services --output-dir /tmp/bark-services
 ```
 
 </details>
@@ -408,10 +408,44 @@ même lorsque le détecteur est arrêté.
 Avant chaque musique, le lecteur vérifie la connexion Bluetooth à l’Acton III,
 tente de la reconnecter, attend sa sortie PipeWire et la sélectionne par défaut.
 Si l’enceinte est indisponible, la lecture est annulée et la cause apparaît dans
-« Musiques déclenchées ». Ces opérations se font dans le processus de lecture,
+la chronologie du journal. Ces opérations se font dans le processus de lecture,
 sans bloquer la détection. L’enceinte doit être allumée et déjà appairée.
 
-La page `/logs`, accessible depuis le dashboard et protégée par le même accès,
-affiche les 200 dernières lignes du détecteur (musique comprise) ou du dashboard.
+La page « Diagnostic » (`/logs`), accessible depuis le journal et protégée par le
+même accès, affiche les 200 dernières lignes du détecteur ou de l’interface web.
 Elle s’actualise toutes les deux secondes, avec pause et suivi automatique.
 Le service dashboard utilise le groupe `systemd-journal` pour lire ces journaux.
+
+## Écouter la maison et parler en direct
+
+L’onglet **Direct** utilise le micro déjà ouvert par le détecteur et l’enceinte
+Bluetooth configurée par `BARK_SPEAKER_ADDRESS`. Clique sur **Écouter la maison**,
+puis maintiens **Maintenir pour parler**. Le navigateur demande l’accès au micro
+de ton appareil la première fois. Relâche le bouton pour reprendre l’écoute.
+La voix interrompt la musique automatique en cours. Le direct ne crée aucun
+fichier audio supplémentaire. Les enregistrements déclenchés par le détecteur
+continuent à utiliser le micro de la maison.
+
+1. Installe l’extension audio sur le Pi avec `.venv/bin/python -m pip install -e '.[live]'`.
+   La sortie voix utilise `pw-cat` et l’enceinte doit être appairée dans la session
+   PipeWire de l’utilisateur des services.
+2. Ajoute `LIVE_AUDIO_ENABLED=true` dans `.env`. Le niveau de la voix est réglable
+   avec `LIVE_VOICE_VOLUME_PERCENT` (30 par défaut).
+3. Redémarre les services `bark-detector` et `bark-dashboard`. Une seule session
+   audio est ouverte à la fois et elle prend fin après dix minutes.
+
+### Accès à distance avec Cloudflare
+
+- Si `cloudflared` tourne sur le Pi, configure le tunnel vers
+  `http://127.0.0.1:8080` avec `HOST=127.0.0.1` et `COOKIE_SECURE=true` dans
+  `.env`. Conserve le nom d’hôte public dans l’en-tête HTTP `Host` et protège
+  l’ensemble du domaine avec Cloudflare Access. Le navigateur utilise l’URL
+  HTTPS pour demander l’accès au micro du téléphone.
+  [Tunnel](https://developers.cloudflare.com/tunnel/get-started/) ·
+  [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/)
+- Pour une connexion hors du Wi-Fi, configure aussi une clé **Cloudflare Realtime
+  TURN** et renseigne `LIVE_TURN_KEY_ID` et `LIVE_TURN_KEY` côté Pi, puis redémarre
+  le tableau de bord. Le tunnel fournit l’accès HTTPS et la signalisation.
+  WebRTC utilise un chemin direct si possible ou fait passer l’audio par TURN.
+  Le tableau de bord génère des identifiants temporaires, et la clé reste sur
+  le Pi. [Cloudflare Realtime TURN](https://developers.cloudflare.com/realtime/turn/generate-credentials/)

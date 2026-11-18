@@ -13,6 +13,7 @@ from sqlalchemy.dialects.sqlite import insert
 
 from app.models import BarkSession, Coverage, Day, Detection, DetectorState, LegacyImport, MusicEvent
 from app.services.recordings import sync_recordings
+from app.infrastructure.paths import prepare_data_directory
 
 BARK = re.compile(r'^\[BARKING DETECTED\] (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}).*volume: ([\d.]+)')
 SESSION = re.compile(r'^\[BARK SESSION\] From (.*?) to (.*?) \(Duration: ([\d.]+) seconds, (\d+) barks\)')
@@ -140,6 +141,7 @@ def verify_legacy(database):
 def initialize(database):
     """Called once per process startup, serialized across processes."""
     with database.maintenance():
+        prepare_data_directory(database.directory)
         backup = backup_legacy(database.directory)
         database.upgrade()
         import_logs(database)

@@ -2,7 +2,7 @@
 import datetime as dt
 
 from sqlalchemy import func, select
-from app.models import BarkSession, Day, Detection, MusicEvent, Recording
+from app.models import BarkSession, Day, Detection, LiveVoiceEvent, MusicEvent, Recording
 from app.services.monitoring import monitoring_snapshot
 
 
@@ -41,6 +41,9 @@ class Dashboard:
                 item['has_data'] = key in logged_dates or bool(item['listened_seconds'])
             music = [dict(date=e.date, time=e.time, status=e.status, track=e.track, detail=e.detail)
                      for e in session.scalars(select(MusicEvent).where(MusicEvent.date == date).order_by(MusicEvent.id.desc()))]
+            live_voice = [dict(id=e.id, date=e.date, time=e.time)
+                          for e in session.scalars(select(LiveVoiceEvent).where(LiveVoiceEvent.date == date)
+                                                   .order_by(LiveVoiceEvent.id.desc()))]
             recordings = [dict(name=r.name, date=r.date, time=r.time, duration=r.duration, url='/audio/' + r.name)
                           for r in session.scalars(select(Recording).where(Recording.date == date).order_by(Recording.name.desc()))]
         trend_days = []
@@ -51,7 +54,8 @@ class Dashboard:
                       hours=[sum(item['hours'][h] for item in trend_days) for h in range(24)],
                       listened_seconds=sum(item['listened_seconds'] or 0 for item in trend_days)
                       if any(item['listened_seconds'] is not None for item in trend_days) else None)
-        return dict(date=date, detector=detector, music_events=music, summary=days.get(date, empty_day(date)),
+        return dict(date=date, detector=detector, music_events=music, live_voice_events=live_voice,
+                    summary=days.get(date, empty_day(date)),
                     days=sorted(days.values(), key=lambda d: d['date'], reverse=True), trends=trends, recordings=recordings)
 
 

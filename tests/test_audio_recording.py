@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import soundfile as sf
 
-from audio_recording import AudioBuffer, BarkRecorder
+from app.services.recording import AudioBuffer, BarkRecorder
 
 
 class RecordingTests(unittest.TestCase):

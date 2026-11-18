@@ -11,6 +11,10 @@ from app.services.migration import initialize, verify_legacy
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
+    from app.infrastructure.systemd import default_user, install_services
+    installer = sub.add_parser('install-services', help='Install systemd services or generate a preview')
+    installer.add_argument('--user', default=default_user())
+    installer.add_argument('--output-dir', type=Path, help='Generate units without installing or starting services')
     for name in ('web', 'detector', 'migrate', 'verify', 'sync', 'revision'):
         child = sub.add_parser(name)
         child.add_argument('--data-dir', type=Path)
@@ -20,6 +24,12 @@ def main(argv=None):
         if name == 'revision':
             child.add_argument('message')
     args = parser.parse_args(argv)
+    if args.command == 'install-services':
+        try:
+            install_services(args.user, args.output_dir)
+        except (ValueError, PermissionError) as error:
+            installer.error(str(error))
+        return
     overrides = {key: value for key, value in vars(args).items() if key in ('data_dir', 'host', 'port') and value is not None}
     settings = Settings(**overrides)
     if args.command == 'web':

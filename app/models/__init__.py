@@ -45,6 +45,13 @@ class MusicEvent(Base):
     legacy_key: Mapped[str | None] = mapped_column(String, unique=True)
 
 
+class LiveVoiceEvent(Base):
+    __tablename__ = 'live_voice_events'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)
+    time: Mapped[str] = mapped_column(String(8))
+
+
 class Recording(Base):
     __tablename__ = 'recordings'
     name: Mapped[str] = mapped_column(String, primary_key=True)

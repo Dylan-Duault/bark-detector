@@ -4,7 +4,8 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from bark_music import BarkMusic, load_music_config, play_track, ensure_speaker
+from app.config import Settings
+from app.services.music import BarkMusic, play_track, ensure_speaker
 
 
 class MusicTests(unittest.TestCase):
@@ -69,22 +70,26 @@ class MusicTests(unittest.TestCase):
 
     def test_config_defaults_to_disabled_and_accepts_boolean(self):
         config = self.path.parent / '.env'
-        self.assertEqual(load_music_config(config),
-                         dict(enabled=False, bark_count=20, window_seconds=300, volume_percent=35))
+        settings = Settings(_env_file=config)
+        self.assertFalse(settings.bark_music_enabled)
+        self.assertEqual(settings.bark_music_bark_count, 20)
+        self.assertEqual(settings.bark_music_window_seconds, 300)
+        self.assertEqual(settings.bark_music_volume_percent, 35)
         config.write_text('DASHBOARD_PIN=1234\nBARK_MUSIC_ENABLED=true\n')
-        self.assertTrue(load_music_config(config)['enabled'])
+        self.assertTrue(Settings(_env_file=config).bark_music_enabled)
         config.write_text('BARK_MUSIC_ENABLED=false\n')
-        self.assertFalse(load_music_config(config)['enabled'])
+        self.assertFalse(Settings(_env_file=config).bark_music_enabled)
         config.write_text('BARK_MUSIC_ENABLED=typo\n')
         with self.assertRaises(ValueError):
-            load_music_config(config)
+            Settings(_env_file=config)
 
     def test_custom_threshold_and_period(self):
         config = self.path.parent / '.env'
         config.write_text('BARK_MUSIC_ENABLED=true\nBARK_MUSIC_BARK_COUNT=3\n'
                           'BARK_MUSIC_WINDOW_SECONDS=10\n')
-        self.music = BarkMusic(path=self.path, clock=lambda: self.now,
-                               spawn=self.spawn, **load_music_config(config))
+        options = Settings(_env_file=config).music_options
+        options['path'] = self.path
+        self.music = BarkMusic(clock=lambda: self.now, spawn=self.spawn, **options)
         self.detect(2)
         self.now = 10  # The first detection has expired.
         self.detect(1)
@@ -100,8 +105,8 @@ class MusicTests(unittest.TestCase):
             for value in ('0', '-1', '1.5', 'abc', ''):
                 with self.subTest(key=key, value=value):
                     config.write_text(f'{key}={value}\n')
-                    with self.assertRaisesRegex(ValueError, key):
-                        load_music_config(config)
+                    with self.assertRaisesRegex(ValueError, key.lower()):
+                        Settings(_env_file=config)
 
     def test_playlist_rotates_wraps_and_resumes_after_restart(self):
         directory = self.path.parent
@@ -156,10 +161,10 @@ class MusicTests(unittest.TestCase):
         config = self.path.parent / '.env'
         for value in ('-1', '101', '35.5', 'abc', ''):
             config.write_text(f'BARK_MUSIC_VOLUME_PERCENT={value}\n')
-            with self.assertRaisesRegex(ValueError, 'BARK_MUSIC_VOLUME_PERCENT'):
-                load_music_config(config)
+            with self.assertRaisesRegex(ValueError, 'bark_music_volume_percent'):
+                Settings(_env_file=config)
         config.write_text('BARK_MUSIC_VOLUME_PERCENT=42\n')
-        self.assertEqual(load_music_config(config)['volume_percent'], 42)
+        self.assertEqual(Settings(_env_file=config).bark_music_volume_percent, 42)
 
     def test_playback_events_report_verified_start_and_failure(self):
         event = Mock()

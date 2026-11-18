@@ -7,6 +7,7 @@ import time
 from app.config import Settings
 from app.infrastructure.database import Database
 from app.services.history import History
+from app.infrastructure.live_audio import MicrophoneFeed
 from app.services.migration import initialize
 from app.services.monitoring import DetectorMonitor
 from app.services.music import BarkMusic
@@ -23,7 +24,7 @@ def run(settings, database, monitor):
     tracker = SessionTracker(history, settings.session_gap_seconds,
                              settings.min_barks_per_session, settings.min_session_duration)
     music = BarkMusic(**settings.music_options)
-    stream = recorder = None
+    stream = recorder = feed = None
     try:
         model = Yamnet(settings)
         buffer = AudioBuffer(settings.sample_rate, int(settings.sample_rate * settings.chunk_duration), settings.record_duration)
@@ -31,7 +32,17 @@ def run(settings, database, monitor):
                                 settings.consecutive_barks, settings.record_quiet_seconds,
                                 on_saved=lambda path: index_recording(database, path))
         try:
-            stream = sd.InputStream(callback=buffer.callback, channels=1, samplerate=settings.sample_rate)
+            callback = buffer.callback
+            options = {}
+            if settings.live_audio_enabled:
+                feed = MicrophoneFeed(settings.data_dir)
+                options['blocksize'] = settings.sample_rate // 50
+
+                def callback(indata, frames, time_info, status):
+                    buffer.callback(indata, frames, time_info, status)
+                    feed.publish((indata[:, 0].clip(-1, 1) * 32767).astype('<i2'))
+
+            stream = sd.InputStream(callback=callback, channels=1, samplerate=settings.sample_rate, **options)
             stream.start()
         except Exception:
             monitor.set_state('microphone_unavailable')
@@ -40,6 +51,9 @@ def run(settings, database, monitor):
         print('Listening for dog vocalisations…', flush=True)
         while True:
             monitor.heartbeat()
+            speaking = feed is not None and feed.speaking()
+            if speaking:
+                music.yield_to_voice()
             chunk = buffer.read_chunk()
             if chunk is None:
                 if not stream.active:
@@ -58,7 +72,8 @@ def run(settings, database, monitor):
             if is_bark:
                 history.detection(now, volume)
                 print(f'[BARKING DETECTED] {now.isoformat()} volume={volume:.4f}', flush=True)
-                music.detected()
+                if not speaking:
+                    music.detected()
     finally:
         try:
             tracker.finish()
@@ -72,8 +87,12 @@ def run(settings, database, monitor):
                     if recorder:
                         recorder.finish()
                 finally:
-                    if stream:
-                        stream.close()
+                    try:
+                        if stream:
+                            stream.close()
+                    finally:
+                        if feed:
+                            feed.close()
 
 
 def main(settings=None):

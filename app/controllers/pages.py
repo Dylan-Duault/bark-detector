@@ -20,6 +20,12 @@ def login(request: Request):
     return templates.TemplateResponse(request=request, name='login.html')
 
 
+@router.get('/direct')
+def direct(request: Request):
+    return templates.TemplateResponse(request=request, name='direct.html',
+                                      context={'enabled': request.app.state.settings.live_audio_enabled})
+
+
 @router.get('/logs')
 def logs(request: Request):
     return templates.TemplateResponse(request=request, name='logs.html')

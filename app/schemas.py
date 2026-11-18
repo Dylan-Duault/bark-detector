@@ -56,6 +56,12 @@ class MusicInfo(BaseModel):
     detail: str
 
 
+class LiveVoiceInfo(BaseModel):
+    id: int
+    date: str
+    time: str
+
+
 class DashboardResponse(BaseModel):
     date: str
     detector: DetectorStatus
@@ -64,6 +70,7 @@ class DashboardResponse(BaseModel):
     days: list[DaySummary]
     recordings: list[RecordingInfo]
     music_events: list[MusicInfo]
+    live_voice_events: list[LiveVoiceInfo]
 
 
 class WaveformResponse(BaseModel):

@@ -1,7 +1,8 @@
 from pathlib import Path
 import tempfile
 import unittest
-from dashboard_auth import Auth, COOKIE, SESSION_SECONDS, load_pin
+from app.config import Settings
+from app.services.auth import Auth, COOKIE, SESSION_SECONDS
 
 
 class AuthTests(unittest.TestCase):
@@ -9,13 +10,13 @@ class AuthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '.env'
             with self.assertRaises(ValueError):
-                load_pin(path)
+                Settings(_env_file=path).require_pin()
             for invalid in ('', '123', '12345', 'abcd', '１２３４'):
                 path.write_text('DASHBOARD_PIN='+invalid)
                 with self.assertRaises(ValueError):
-                    load_pin(path)
+                    Settings(_env_file=path).require_pin()
             path.write_text('# Private configuration\nDASHBOARD_PIN="0123"\n')
-            self.assertEqual(load_pin(path), '0123')
+            self.assertEqual(Settings(_env_file=path).require_pin(), '0123')
 
     def test_progressive_delay_is_enforced_even_for_correct_pin(self):
         now = [100.0]

@@ -11,11 +11,10 @@ export class BarkRecording extends HTMLElement {
   row.dataset.name = recording.name;
   this.append(row);
   const header = element('div', undefined, 'recording-header');
-  const label = element('div');
-  label.append(element('span', 'ENREGISTREMENT', 'eyebrow'), element('strong', `À ${recording.time}`));
-  const download = element('a', 'Télécharger ↓', 'download');
+  const download = element('a', 'Télécharger', 'download');
   download.href = recording.url; download.download = recording.name;
-  header.append(label, download);
+  download.setAttribute('aria-label', `Télécharger l’enregistrement de ${recording.time}`);
+  header.append(element('h3', 'Enregistrement audio'), download);
   const audio = document.createElement('audio');
   audio.controls = true; audio.preload = 'none'; audio.src = recording.url;
   audio.setAttribute('aria-label', `Écouter l’enregistrement déclenché à ${recording.time}`);

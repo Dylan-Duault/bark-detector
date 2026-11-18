@@ -13,18 +13,6 @@ from app.infrastructure.database import Database
 from app.services.history import History
 
 
-def load_music_config(path):
-    from pydantic import ValidationError
-    try:
-        config = Settings(_env_file=path)
-    except ValidationError as error:
-        fields = ', '.join(str(item['loc'][0]).upper() for item in error.errors())
-        raise ValueError(f'Invalid configuration: {fields}') from None
-    return dict(enabled=config.bark_music_enabled, bark_count=config.bark_music_bark_count,
-                window_seconds=config.bark_music_window_seconds,
-                volume_percent=config.bark_music_volume_percent)
-
-
 def log_music_event(status, track, detail='', directory=None):
     database = Database(directory or Settings().data_dir)
     try:
@@ -38,7 +26,7 @@ def log_music_event(status, track, detail='', directory=None):
 ACTON_ADDRESS = '74:68:59:AA:5E:05'
 
 
-def ensure_speaker(run=subprocess.run, sleep=time.sleep, address=ACTON_ADDRESS):
+def ensure_speaker(run=subprocess.run, sleep=time.sleep, address=ACTON_ADDRESS, select_default=True):
     """Reconnect the paired speaker and wait for its real PipeWire audio node."""
     info = run(['bluetoothctl', 'info', address], check=True, timeout=10,
                capture_output=True, text=True)
@@ -53,8 +41,9 @@ def ensure_speaker(run=subprocess.run, sleep=time.sleep, address=ACTON_ADDRESS):
             name = props.get('node.name', '')
             if (props.get('media.class') == 'Audio/Sink'
                     and address.replace(':', '_') in name):
-                run(['wpctl', 'set-default', str(item['id'])], check=True, timeout=5)
-                return
+                if select_default:
+                    run(['wpctl', 'set-default', str(item['id'])], check=True, timeout=5)
+                return name
         if attempt < 9:
             sleep(1)
     raise OSError('ACTON III : aucune sortie audio disponible après reconnexion Bluetooth.')
@@ -111,6 +100,7 @@ class BarkMusic:
         self.volume_percent = volume_percent
         self.barks = deque(maxlen=bark_count)
         self.process = None
+        self.interrupted = False
         self.retry_at = 0
         self.last_track = None
         if self.path.is_dir():
@@ -135,9 +125,10 @@ class BarkMusic:
         if self.process is not None:
             if self.process.poll() is None:
                 return
-            if self.process.returncode:
+            if self.process.returncode and not self.interrupted:
                 print(f'[MUSIC] Player exited with code {self.process.returncode}', flush=True)
             self.process = None
+            self.interrupted = False
             self.barks.clear()
         while self.barks and now - self.barks[0] >= self.window_seconds:
             self.barks.popleft()
@@ -170,6 +161,12 @@ class BarkMusic:
             self.barks.clear()
             print(f'[MUSIC] {self.bark_count} detections in less than '
                   f'{self.window_seconds} seconds: playing {track.name}', flush=True)
+
+    def yield_to_voice(self):
+        self.barks.clear()
+        if self.process is not None and not self.interrupted and self.process.poll() is None:
+            self.process.terminate()
+            self.interrupted = True
 
     def close(self):
         if self.process is not None and self.process.poll() is None:

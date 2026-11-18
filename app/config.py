@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     host: str = '0.0.0.0'
     port: int = Field(default=8080, ge=1, le=65535)
+    live_audio_enabled: bool = False
+    live_voice_volume_percent: int = Field(default=30, ge=0, le=100)
+    live_turn_key_id: str = Field(default='', pattern=r'^[a-zA-Z0-9_-]*$')
+    live_turn_key: SecretStr = SecretStr('')
     bark_music_enabled: bool = False
     bark_music_bark_count: int = Field(default=20, gt=0)
     bark_music_window_seconds: int = Field(default=300, gt=0)

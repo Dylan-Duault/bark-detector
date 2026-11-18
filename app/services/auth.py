@@ -10,11 +10,6 @@ COOKIE = 'bark_session'
 SESSION_SECONDS = 12 * 3600
 
 
-def load_pin(path):
-    from app.config import Settings
-    return Settings(_env_file=path).require_pin()
-
-
 class Auth:
     def __init__(self, pin, clock=time.monotonic):
         if not re.fullmatch(r'[0-9]{4}', pin):

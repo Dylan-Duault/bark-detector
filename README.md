@@ -131,6 +131,12 @@ service publie son état environ toutes les 5 secondes ; s’il ne répond plus,
 l’interface cesse d’annoncer une écoute active. L’heure du dernier signal est
 accessible dans l’infobulle de cette ligne.
 
+L’API du tableau de bord (`/api/dashboard`) expose `detector.healthy`, qui vaut
+`true` quand le détecteur est à l’écoute. Si le micro est indisponible ou ne
+fournit plus d’échantillons pendant 5 secondes, l’état de santé passe à `false`
+et systemd relance `bark-detector` après 10 secondes. Un micro qui capte du silence
+continue de fournir des échantillons.
+
 Le temps d’écoute mesuré est indiqué à côté du titre de la journée et dans
 l’historique, ainsi que dans les détails du graphique quotidien. Il correspond
 aux extraits réellement analysés, sans compter le chargement du modèle, les

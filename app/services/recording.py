@@ -20,6 +20,7 @@ class AudioBuffer:
         self.capturing = False
         self.lock = Lock()
         self.last_input_at = None
+        self.last_input_tick = None
         self.last_chunk_end = None
 
     def callback(self, indata, frames, time_info, status):
@@ -28,6 +29,7 @@ class AudioBuffer:
         mono = indata[:, 0].copy()
         with self.lock:
             self.last_input_at = time.time()
+            self.last_input_tick = time.monotonic()
             self.buffer.extend(mono)
             self.history.append(mono)
             self.history_length += len(mono)

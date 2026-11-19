@@ -1,6 +1,6 @@
 """Public HTTP contracts, separate from persistence models."""
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class LoginRequest(BaseModel):
@@ -13,6 +13,11 @@ class DetectorStatus(BaseModel):
     updated_at: float | None
     last_audio_at: float | None
     tracking_since: float | None
+
+    @computed_field
+    @property
+    def healthy(self) -> bool:
+        return self.state == 'listening'
 
 
 class DaySummary(BaseModel):

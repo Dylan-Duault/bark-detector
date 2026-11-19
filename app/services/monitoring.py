@@ -25,12 +25,10 @@ class DetectorMonitor:
         self.last_audio_at = self.last_credited_end = None
         self.last_flush = float('-inf')
         self.state = 'starting'
-        self.state_since = self.monotonic()
         self.set_state('starting')
 
     def set_state(self, state):
         self.state = state
-        self.state_since = self.monotonic()
         self.flush(force=True)
 
     def processed(self, end, seconds):
@@ -48,10 +46,6 @@ class DetectorMonitor:
         self.flush(force=changed)
 
     def heartbeat(self):
-        if self.state == 'listening' and self.clock() - self.last_audio_at > 5:
-            self.set_state('no_audio')
-        elif self.state == 'waiting_audio' and self.monotonic() - self.state_since > 5:
-            self.set_state('no_audio')
         self.flush()
 
     def flush(self, force=False):

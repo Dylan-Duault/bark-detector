@@ -34,7 +34,7 @@ class MonitorTests(unittest.TestCase):
         self.now[0] += 100
         self.monitor.heartbeat()
         status, coverage = read_monitoring(self.directory, self.now[0])
-        self.assertEqual(status['state'], 'no_audio')
+        self.assertEqual(status['state'], 'listening')
         self.assertAlmostEqual(sum(coverage['2026-11-14']), 1.8, places=5)
 
     def test_loss_of_heartbeat_cannot_show_listening_forever(self):

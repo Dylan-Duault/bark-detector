@@ -145,6 +145,7 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(client.post('/api/login', json={'pin':'1234'}).status_code, 200)
             response = client.get('/api/dashboard?date='+self.date)
             self.assertEqual(response.status_code, 200)
+            self.assertIs(response.json()['detector']['healthy'], False)
             self.assertEqual(response.json()['summary']['detections'], 3)
             response = client.get('/api/waveform/'+self.name)
             self.assertEqual(response.status_code, 200)

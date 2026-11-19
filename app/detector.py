@@ -14,6 +14,8 @@ from app.services.music import BarkMusic
 from app.services.recordings import index_recording
 from app.services.sessions import SessionTracker
 
+MICROPHONE_TIMEOUT_SECONDS = 5
+
 
 def run(settings, database, monitor):
     import sounddevice as sd
@@ -44,22 +46,29 @@ def run(settings, database, monitor):
 
             stream = sd.InputStream(callback=callback, channels=1, samplerate=settings.sample_rate, **options)
             stream.start()
+            stream_started_at = time.monotonic()
         except Exception:
             monitor.set_state('microphone_unavailable')
             raise
         monitor.set_state('waiting_audio')
         print('Listening for dog vocalisations…', flush=True)
         while True:
+            if not stream.active:
+                monitor.set_state('microphone_unavailable')
+                raise RuntimeError('Microphone stream stopped unexpectedly')
+            tick = time.monotonic()
+            last_input = buffer.last_input_tick
+            if last_input is None:
+                last_input = stream_started_at
+            if tick - last_input >= MICROPHONE_TIMEOUT_SECONDS:
+                monitor.set_state('no_audio')
+                raise RuntimeError(f'No microphone samples for {MICROPHONE_TIMEOUT_SECONDS} seconds')
             monitor.heartbeat()
             speaking = feed is not None and feed.speaking()
             if speaking:
                 music.yield_to_voice()
             chunk = buffer.read_chunk()
             if chunk is None:
-                if not stream.active:
-                    monitor.set_state('microphone_unavailable')
-                    raise RuntimeError('Microphone stream stopped unexpectedly')
-                tick = time.monotonic()
                 recorder.poll(tick)
                 tracker.update(False, dt.datetime.now(), tick)
                 time.sleep(.05)
@@ -116,7 +125,7 @@ def main(settings=None):
         if monitor:
             monitor.set_state('stopped')
     except Exception:
-        if monitor and monitor.state != 'microphone_unavailable':
+        if monitor and monitor.state not in ('microphone_unavailable', 'no_audio'):
             monitor.set_state('error')
         raise
     finally:
